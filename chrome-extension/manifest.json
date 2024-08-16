@@ -1,0 +1,15 @@
+{
+    "manifest_version": 3,
+    "name": "Browsing analyzer",
+    "version": "1.0.0",
+    "icons": {
+        "16": "images/icon-16.png"
+    },
+    "permissions": [
+        "tabs",
+        "storage"
+    ],
+    "background": {
+        "service_worker": "service-worker.js"
+    }
+}
