@@ -1,14 +1,34 @@
 // Function to log page visits
 function logPageVisit(tabId, url, title, typeOfVisit) {
-  const visitData = {
+  const tabUpdateEvent = {
+    tab_id: tabId,
     timestamp: new Date().toISOString(),
-    tabId: tabId,
-    url: url,
     title: title,
-    typeOfVisit: typeOfVisit,
+    type_of_visit: typeOfVisit,
+    url: url,
   };
 
-  console.log("Page visited:", visitData);
+  console.log("Page visited:", tabUpdateEvent);
+
+  fetch("http://localhost:8000/log_event", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(tabUpdateEvent),
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then((data) => {
+      console.log("Success:", data);
+    })
+    .catch((error) => {
+      console.error("Error:", error);
+    });
 }
 
 // Listen for tab updates
