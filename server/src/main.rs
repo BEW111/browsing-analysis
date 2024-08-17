@@ -5,6 +5,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
+use dotenv::{dotenv, var};
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
@@ -13,32 +14,37 @@ use tower_http::cors::CorsLayer;
 #[derive(Deserialize, Serialize, FromRow, Debug)]
 struct TabUpdateEvent {
     timestamp: DateTime<Utc>,
-    tab_id: String,
+    tab_id: i32,
     url: String,
     title: String,
     type_of_visit: String,
 }
-
-async fn root() -> &'static str {
-    "Hello, World!"
+#[derive(Deserialize, Serialize, FromRow, Debug)]
+struct TabUpdateRow {
+    id: i32,
+    timestamp: DateTime<Utc>,
+    tab_id: i32,
+    url: String,
+    title: String,
+    type_of_visit: String,
 }
 
 async fn log_tab_update_event(
     State(pool): State<PgPool>,
     Json(tab_update_event): Json<TabUpdateEvent>,
 ) -> Result<Json<TabUpdateEvent>, (StatusCode, String)> {
-    let result = sqlx::query(
+    let result = sqlx::query_as!(
+        TabUpdateEvent,
         r#"
-        INSERT INTO events (timestamp, tab_id, url, title, type_of_visit) 
-        VALUES ($1, $2, $3, $4, $5) 
-        RETURNING *
+        INSERT INTO TAB_UPDATES (timestamp, tab_id, url, title, type_of_visit) 
+        VALUES ($1, $2, $3, $4, $5)
         "#,
+        tab_update_event.timestamp,
+        tab_update_event.tab_id,
+        tab_update_event.url,
+        tab_update_event.title,
+        tab_update_event.type_of_visit
     )
-    .bind(&tab_update_event.timestamp)
-    .bind(&tab_update_event.tab_id)
-    .bind(&tab_update_event.url)
-    .bind(&tab_update_event.title)
-    .bind(&tab_update_event.type_of_visit)
     .fetch_one(&pool)
     .await;
 
@@ -57,7 +63,7 @@ async fn log_tab_update_event(
 async fn return_all_events(
     State(pool): State<PgPool>,
 ) -> Result<&'static str, (StatusCode, String)> {
-    let mut stream = sqlx::query_as::<_, TabUpdateEvent>("SELECT * FROM events").fetch(&pool);
+    let mut stream = sqlx::query_as!(TabUpdateRow, "SELECT * FROM TAB_UPDATES").fetch(&pool);
 
     while let Some(tab_update_event) = stream
         .try_next()
@@ -70,15 +76,16 @@ async fn return_all_events(
     Ok("Successfully returned all events!")
 }
 
-async fn create_events_table(
+async fn create_tab_updates_table(
     State(pool): State<PgPool>,
 ) -> Result<&'static str, (StatusCode, String)> {
-    let query = sqlx::query(
+    let query = sqlx::query_as!(
+        TabUpdateRow,
         r#"
-        CREATE TABLE IF NOT EXISTS events (
+        CREATE TABLE IF NOT EXISTS TAB_UPDATES (
             id SERIAL PRIMARY KEY,
             timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
-            tab_id TEXT NOT NULL,
+            tab_id int NOT NULL,
             url TEXT NOT NULL,
             title TEXT NOT NULL,
             type_of_visit TEXT NOT NULL
@@ -103,9 +110,8 @@ pub fn create_router(pool: PgPool) -> Router {
         .allow_headers([CONTENT_TYPE]);
 
     Router::new()
-        .route("/", get(root))
         .route("/log_event", post(log_tab_update_event))
-        .route("/create_table", post(create_events_table))
+        .route("/create_table", post(create_tab_updates_table))
         .route("/return_all_events", get(return_all_events))
         .with_state(pool)
         .layer(cors)
@@ -113,9 +119,13 @@ pub fn create_router(pool: PgPool) -> Router {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+
+    let database_url = var("DATABASE_URL").map_err(|_e| "Couldn't find DATABASE_URL env var")?;
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .connect("postgres://user:password@db/mydatabase")
+        .connect(database_url.as_str())
         .await?;
 
     let app = create_router(pool);

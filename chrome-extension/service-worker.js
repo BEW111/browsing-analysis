@@ -1,7 +1,7 @@
 // Function to log page visits
 function logPageVisit(tabId, url, title, typeOfVisit) {
   const tabUpdateEvent = {
-    tab_id: tabId.toString(),
+    tab_id: tabId,
     timestamp: new Date().toISOString(),
     title: title,
     type_of_visit: typeOfVisit,
