@@ -12,7 +12,7 @@ use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
 use tower_http::cors::CorsLayer;
 
 #[derive(Deserialize, Serialize, FromRow, Debug)]
-struct TabUpdateEvent {
+struct TabUpdate {
     timestamp: DateTime<Utc>,
     tab_id: i32,
     url: String,
@@ -31,13 +31,14 @@ struct TabUpdateRow {
 
 async fn log_tab_update_event(
     State(pool): State<PgPool>,
-    Json(tab_update_event): Json<TabUpdateEvent>,
-) -> Result<Json<TabUpdateEvent>, (StatusCode, String)> {
+    Json(tab_update_event): Json<TabUpdate>,
+) -> Result<Json<TabUpdateRow>, (StatusCode, String)> {
     let result = sqlx::query_as!(
-        TabUpdateEvent,
+        TabUpdateRow,
         r#"
         INSERT INTO TAB_UPDATES (timestamp, tab_id, url, title, type_of_visit) 
         VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
         "#,
         tab_update_event.timestamp,
         tab_update_event.tab_id,
@@ -49,9 +50,9 @@ async fn log_tab_update_event(
     .await;
 
     match result {
-        Ok(_) => {
+        Ok(uploaded_row) => {
             println!("Successfully uploaded event");
-            Ok(Json(tab_update_event))
+            Ok(Json(uploaded_row))
         }
         Err(e) => {
             println!("Failed to upload event");
