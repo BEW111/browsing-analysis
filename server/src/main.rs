@@ -12,12 +12,12 @@ use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
 use tower_http::cors::CorsLayer;
 
 #[derive(Deserialize, Serialize, FromRow, Debug)]
-struct TabUpdate {
+struct TabUpdateEventFromChromeExtension {
     timestamp: DateTime<Utc>,
     tab_id: i32,
     url: String,
     title: String,
-    type_of_visit: String,
+    type_of_visit: String, // TODO: make this into an enum
 }
 #[derive(Deserialize, Serialize, FromRow, Debug)]
 struct TabUpdateRow {
@@ -31,9 +31,11 @@ struct TabUpdateRow {
 
 async fn log_tab_update_event(
     State(pool): State<PgPool>,
-    Json(tab_update_event): Json<TabUpdate>,
+    Json(tab_update_event): Json<TabUpdateEventFromChromeExtension>,
 ) -> Result<Json<TabUpdateRow>, (StatusCode, String)> {
-    let result = sqlx::query_as!(
+    println!("Received event: {:?}", tab_update_event);
+
+    let insert_tab_update_result = sqlx::query_as!(
         TabUpdateRow,
         r#"
         INSERT INTO TAB_UPDATES (timestamp, tab_id, url, title, type_of_visit) 
@@ -49,11 +51,8 @@ async fn log_tab_update_event(
     .fetch_one(&pool)
     .await;
 
-    match result {
-        Ok(uploaded_row) => {
-            println!("Successfully uploaded event");
-            Ok(Json(uploaded_row))
-        }
+    match insert_tab_update_result {
+        Ok(uploaded_row) => Ok(Json(uploaded_row)),
         Err(e) => {
             println!("Failed to upload event");
             Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
@@ -63,18 +62,14 @@ async fn log_tab_update_event(
 
 async fn return_all_events(
     State(pool): State<PgPool>,
-) -> Result<&'static str, (StatusCode, String)> {
-    let mut stream = sqlx::query_as!(TabUpdateRow, "SELECT * FROM TAB_UPDATES").fetch(&pool);
-
-    while let Some(tab_update_event) = stream
-        .try_next()
+) -> Result<Json<Vec<TabUpdateRow>>, (StatusCode, String)> {
+    let stream = sqlx::query_as!(TabUpdateRow, "SELECT * FROM TAB_UPDATES").fetch(&pool);
+    let collected_events = stream
+        .try_collect::<Vec<_>>()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    {
-        println!("{:?}", tab_update_event);
-    }
-
-    Ok("Successfully returned all events!")
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    collected_events
 }
 
 async fn create_tab_updates_table(
