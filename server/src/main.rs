@@ -1,14 +1,16 @@
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
     routing::{get, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
+use tower_http::cors::CorsLayer;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, FromRow, Debug)]
 struct TabUpdateEvent {
     timestamp: DateTime<Utc>,
     tab_id: String,
@@ -52,6 +54,22 @@ async fn log_tab_update_event(
     }
 }
 
+async fn return_all_events(
+    State(pool): State<PgPool>,
+) -> Result<&'static str, (StatusCode, String)> {
+    let mut stream = sqlx::query_as::<_, TabUpdateEvent>("SELECT * FROM events").fetch(&pool);
+
+    while let Some(tab_update_event) = stream
+        .try_next()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    {
+        println!("{:?}", tab_update_event);
+    }
+
+    Ok("Successfully returned all events!")
+}
+
 async fn create_events_table(
     State(pool): State<PgPool>,
 ) -> Result<&'static str, (StatusCode, String)> {
@@ -75,11 +93,22 @@ async fn create_events_table(
 }
 
 pub fn create_router(pool: PgPool) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(
+            "chrome-extension://cdghahhpdoaipdkjjiokakeppeiikobh"
+                .parse::<HeaderValue>()
+                .unwrap(),
+        )
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([CONTENT_TYPE]);
+
     Router::new()
         .route("/", get(root))
         .route("/log_event", post(log_tab_update_event))
         .route("/create_table", post(create_events_table))
+        .route("/return_all_events", get(return_all_events))
         .with_state(pool)
+        .layer(cors)
 }
 
 #[tokio::main]

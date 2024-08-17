@@ -1,7 +1,7 @@
 // Function to log page visits
 function logPageVisit(tabId, url, title, typeOfVisit) {
   const tabUpdateEvent = {
-    tab_id: tabId,
+    tab_id: tabId.toString(),
     timestamp: new Date().toISOString(),
     title: title,
     type_of_visit: typeOfVisit,
@@ -19,9 +19,12 @@ function logPageVisit(tabId, url, title, typeOfVisit) {
   })
     .then((response) => {
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        response.text().then((errorText) => {
+          throw new Error(`(status: ${response.status}) ${errorText}`);
+        });
+      } else {
+        return response.json();
       }
-      return response.json();
     })
     .then((data) => {
       console.log("Success:", data);
