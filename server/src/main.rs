@@ -96,12 +96,15 @@ async fn create_tab_updates_table(
 }
 
 pub fn create_router(pool: PgPool) -> Router {
+    let origins = [
+        "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+        "chrome-extension://cdghahhpdoaipdkjjiokakeppeiikobh"
+            .parse::<HeaderValue>()
+            .unwrap(),
+    ];
+
     let cors = CorsLayer::new()
-        .allow_origin(
-            "chrome-extension://cdghahhpdoaipdkjjiokakeppeiikobh"
-                .parse::<HeaderValue>()
-                .unwrap(),
-        )
+        .allow_origin(origins)
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([CONTENT_TYPE]);
 
