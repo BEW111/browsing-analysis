@@ -33,6 +33,7 @@ async fn log_tab_update_event(
     State(pool): State<PgPool>,
     Json(tab_update_event): Json<TabUpdateEventFromChromeExtension>,
 ) -> Result<Json<TabUpdateRow>, (StatusCode, String)> {
+    // TODO: ignore events that are to chrome://extensions, etc.
     println!("Received event: {:?}", tab_update_event);
 
     let insert_tab_update_result = sqlx::query_as!(
@@ -58,6 +59,9 @@ async fn log_tab_update_event(
             Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
         }
     }
+
+    // TODO: add page (unique) to a separate table to keep track of
+    // different pages
 }
 
 async fn return_all_events(
