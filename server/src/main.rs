@@ -29,6 +29,12 @@ struct TabUpdateRow {
     type_of_visit: String,
 }
 
+#[derive(Deserialize, Serialize, FromRow, Debug)]
+struct TabViewBucket {
+    timestamp_bucket: Option<String>,
+    tab_view_count: Option<i64>,
+}
+
 async fn log_tab_update_event(
     State(pool): State<PgPool>,
     Json(tab_update_event): Json<TabUpdateEventFromChromeExtension>,
@@ -67,7 +73,7 @@ async fn log_tab_update_event(
 async fn return_all_events(
     State(pool): State<PgPool>,
 ) -> Result<Json<Vec<TabUpdateRow>>, (StatusCode, String)> {
-    let stream = sqlx::query_as!(TabUpdateRow, "SELECT * FROM TAB_UPDATES").fetch(&pool);
+    let stream = sqlx::query_as!(TabUpdateRow, r#"SELECT * FROM TAB_UPDATES"#).fetch(&pool);
     let collected_events = stream
         .try_collect::<Vec<_>>()
         .await
@@ -81,7 +87,7 @@ async fn create_tab_updates_table(
 ) -> Result<&'static str, (StatusCode, String)> {
     let query = sqlx::query_as!(
         TabUpdateRow,
-        r#"
+        "
         CREATE TABLE IF NOT EXISTS TAB_UPDATES (
             id SERIAL PRIMARY KEY,
             timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -90,13 +96,57 @@ async fn create_tab_updates_table(
             title TEXT NOT NULL,
             type_of_visit TEXT NOT NULL
         )
-        "#,
+        ",
     );
 
     match query.execute(&pool).await {
         Ok(_) => Ok("Table 'events' created successfully"),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
+}
+
+async fn get_tab_view_buckets(
+    State(pool): State<PgPool>,
+) -> Result<Json<Vec<TabViewBucket>>, (StatusCode, String)> {
+    let stream = sqlx::query_as!(
+        TabViewBucket,
+        // TODO: add time range and interval as query params
+        r#"
+        WITH time_range AS (
+            SELECT 
+                date_trunc('hour', NOW() - INTERVAL '24 hours') AS start_time,
+                date_trunc('hour', NOW()) AS end_time
+        ),
+        time_buckets AS (
+            SELECT generate_series(
+                start_time,
+                end_time,
+                interval '15 minutes'
+            ) AS bucket_start
+            FROM time_range
+        )
+        SELECT 
+            to_char(b.bucket_start, 'YYYY-MM-DD HH24:MI') AS timestamp_bucket,
+            COUNT(tu.id) AS tab_view_count
+        FROM 
+            time_buckets b
+        LEFT JOIN 
+            TAB_UPDATES tu ON tu.timestamp >= b.bucket_start 
+                           AND tu.timestamp < b.bucket_start + interval '15 minutes'
+        GROUP BY 
+            b.bucket_start
+        ORDER BY 
+            b.bucket_start;
+    "#
+    )
+    .fetch(&pool);
+
+    let collected_events = stream
+        .try_collect::<Vec<_>>()
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    collected_events
 }
 
 pub fn create_router(pool: PgPool) -> Router {
@@ -116,6 +166,7 @@ pub fn create_router(pool: PgPool) -> Router {
         .route("/log_event", post(log_tab_update_event))
         .route("/create_table", post(create_tab_updates_table))
         .route("/return_all_events", get(return_all_events))
+        .route("/get_tab_view_buckets", get(get_tab_view_buckets))
         .with_state(pool)
         .layer(cors)
 }

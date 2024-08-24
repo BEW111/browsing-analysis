@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import reactLogo from "./assets/react.svg";
-import viteLogo from "/vite.svg";
 import "./App.css";
+import ActivityLineChart from "./ActivityLineChart";
 
 type TabUpdateRow = {
   id: number;
@@ -10,6 +9,11 @@ type TabUpdateRow = {
   url: string;
   title: string;
   type_of_visit: string;
+};
+
+type TabViewBucketRow = {
+  timestamp_bucket: string;
+  tab_view_count: number;
 };
 
 type TabUpdate = {
@@ -22,6 +26,20 @@ type TabUpdate = {
 
 function App() {
   const [tabUpdateEvents, setTabUpdateEvents] = useState<TabUpdate[]>([]);
+  const [tabViewBuckets, setTabViewBuckets] = useState<TabViewBucketRow[]>([]);
+
+  const refreshTabViewBuckets = async () => {
+    const response = await fetch("http://localhost:8000/get_tab_view_buckets");
+    const tabViewBucketsJson = await response.json();
+    const tabViewBuckets: TabViewBucketRow[] = tabViewBucketsJson.map(
+      (row: TabViewBucketRow) => ({
+        timestamp_bucket: row.timestamp_bucket,
+        tab_view_count: row.tab_view_count,
+      })
+    );
+
+    setTabViewBuckets(tabViewBuckets);
+  };
 
   const refreshTabUpdateEvents = async () => {
     const response = await fetch("http://localhost:8000/return_all_events");
@@ -40,27 +58,14 @@ function App() {
   };
 
   useEffect(() => {
+    refreshTabViewBuckets();
     refreshTabUpdateEvents();
   }, []);
 
   return (
     <>
-      <div>
-        <a href="https://vitejs.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
       <h1>Browsing Analysis</h1>
-      <div>
-        {tabUpdateEvents.map((tabUpdateEvent) => (
-          <div key={tabUpdateEvent.tabId}>
-            <p>{tabUpdateEvent.url}</p>
-          </div>
-        ))}
-      </div>
+      <ActivityLineChart data={tabViewBuckets} />
     </>
   );
 }
