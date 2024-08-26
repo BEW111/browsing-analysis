@@ -3,20 +3,22 @@ type BrowseEventType = "activate" | "update";
 const BACKEND_SERVER_URL = "http://localhost:8000";
 
 function sendBrowseEvent(
-  tabId: string,
-  tabUrl: string,
+  tabId: number,
+  pageUrl: string,
   pageTitle: string,
   pageContent: string | null,
   eventType: BrowseEventType
 ) {
   const browseEvent = {
     tab_id: tabId,
-    tab_url: tabUrl,
     timestamp: new Date().toISOString(),
+    page_url: pageUrl,
     page_title: pageTitle,
     page_content: pageContent,
-    event_tupe: eventType,
+    event_type: eventType,
   };
+
+  console.log(`Sending event ${browseEvent}`);
 
   // TODO: update server url here
   fetch(`${BACKEND_SERVER_URL}/log_event`, {
@@ -47,14 +49,19 @@ function getPageContent() {
 
 // Tab updates (changing the contents of the tab, e.g. clicking a link)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab.url) {
+  if (changeInfo.status === "complete") {
     chrome.scripting
       .executeScript({
         target: { tabId: tabId },
-        function: getPageContent,
+        func: getPageContent,
       })
-      .then((pageContent) => {
-        sendBrowseEvent(tabId, tab.url, tab.title, pageContent, "update");
+      .then((pageContentResults) => {
+        if (pageContentResults.length > 0) {
+          let pageContent = pageContentResults[0].result;
+          if (pageContent && tab.url && tab.title) {
+            sendBrowseEvent(tabId, tab.url, tab.title, pageContent, "update");
+          }
+        }
       });
   }
 });
@@ -62,7 +69,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Tab activation (clicking on a tab, also creating)
 chrome.tabs.onActivated.addListener((activeInfo) => {
   chrome.tabs.get(activeInfo.tabId, (tab) => {
-    if (tab.url) {
+    if (tab.id && tab.url && tab.title) {
       sendBrowseEvent(tab.id, tab.url, tab.title, null, "activate");
     }
   });

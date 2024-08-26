@@ -9,6 +9,11 @@ a breakdown of those topics.
 
 # Running locally
 
+## Chrome Extension
+
+1. `pnpm build` (this compiles the typescript file to a js one)
+2. Add the extension as a local one in your browser, pointing to the `chrome-extension` directory
+
 ## Backend
 
 1. Start the postgres db with

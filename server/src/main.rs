@@ -12,21 +12,22 @@ use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
 use tower_http::cors::CorsLayer;
 
 #[derive(Deserialize, Serialize, FromRow, Debug)]
-struct TabUpdateEventFromChromeExtension {
-    timestamp: DateTime<Utc>,
+struct BrowseEventFromChromeExtension {
     tab_id: i32,
-    url: String,
-    title: String,
-    type_of_visit: String, // TODO: make this into an enum
+    timestamp: DateTime<Utc>,
+    page_url: String,
+    page_title: String,
+    page_content: Option<String>,
+    event_type: String, // TODO: make this into an enum
 }
 #[derive(Deserialize, Serialize, FromRow, Debug)]
-struct TabUpdateRow {
+struct BrowseEventRow {
     id: i32,
     timestamp: DateTime<Utc>,
     tab_id: i32,
-    url: String,
-    title: String,
-    type_of_visit: String,
+    page_url: String,
+    page_title: String,
+    event_type: String,
 }
 
 #[derive(Deserialize, Serialize, FromRow, Debug)]
@@ -35,31 +36,44 @@ struct TabViewBucket {
     tab_view_count: Option<i64>,
 }
 
-async fn log_tab_update_event(
+fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
+    if browse_event.page_url == "chrome://extensions" {
+        return true;
+    }
+
+    false
+}
+
+async fn log_browse_event(
     State(pool): State<PgPool>,
-    Json(tab_update_event): Json<TabUpdateEventFromChromeExtension>,
-) -> Result<Json<TabUpdateRow>, (StatusCode, String)> {
+    Json(browse_event): Json<BrowseEventFromChromeExtension>,
+) -> Result<Json<Option<BrowseEventRow>>, (StatusCode, String)> {
+    if should_ignore_event(&browse_event) {
+        println!("Ignored event: {:?}", browse_event);
+        return Ok(Json(None));
+    }
+
     // TODO: ignore events that are to chrome://extensions, etc.
-    println!("Received event: {:?}", tab_update_event);
+    println!("Logging event: {:?}", browse_event);
 
     let insert_tab_update_result = sqlx::query_as!(
-        TabUpdateRow,
+        BrowseEventRow,
         r#"
-        INSERT INTO TAB_UPDATES (timestamp, tab_id, url, title, type_of_visit) 
+        INSERT INTO browse_event (timestamp, tab_id, page_url, page_title, event_type) 
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *
         "#,
-        tab_update_event.timestamp,
-        tab_update_event.tab_id,
-        tab_update_event.url,
-        tab_update_event.title,
-        tab_update_event.type_of_visit
+        browse_event.timestamp,
+        browse_event.tab_id,
+        browse_event.page_url,
+        browse_event.page_title,
+        browse_event.event_type
     )
     .fetch_one(&pool)
     .await;
 
     match insert_tab_update_result {
-        Ok(uploaded_row) => Ok(Json(uploaded_row)),
+        Ok(uploaded_row) => Ok(Json(Some(uploaded_row))),
         Err(e) => {
             println!("Failed to upload event");
             Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
@@ -72,8 +86,8 @@ async fn log_tab_update_event(
 
 async fn return_all_events(
     State(pool): State<PgPool>,
-) -> Result<Json<Vec<TabUpdateRow>>, (StatusCode, String)> {
-    let stream = sqlx::query_as!(TabUpdateRow, r#"SELECT * FROM TAB_UPDATES"#).fetch(&pool);
+) -> Result<Json<Vec<BrowseEventRow>>, (StatusCode, String)> {
+    let stream = sqlx::query_as!(BrowseEventRow, r#"SELECT * FROM browse_event"#).fetch(&pool);
     let collected_events = stream
         .try_collect::<Vec<_>>()
         .await
@@ -86,7 +100,7 @@ async fn create_tab_updates_table(
     State(pool): State<PgPool>,
 ) -> Result<&'static str, (StatusCode, String)> {
     let query = sqlx::query_as!(
-        TabUpdateRow,
+        BrowseEventRow,
         "
         CREATE TABLE IF NOT EXISTS TAB_UPDATES (
             id SERIAL PRIMARY KEY,
@@ -94,7 +108,7 @@ async fn create_tab_updates_table(
             tab_id int NOT NULL,
             url TEXT NOT NULL,
             title TEXT NOT NULL,
-            type_of_visit TEXT NOT NULL
+            visit_type TEXT NOT NULL
         )
         ",
     );
@@ -127,12 +141,12 @@ async fn get_tab_view_buckets(
         )
         SELECT 
             to_char(b.bucket_start, 'YYYY-MM-DD HH24:MI') AS timestamp_bucket,
-            COUNT(tu.id) AS tab_view_count
+            COUNT(event.id) AS tab_view_count
         FROM 
             time_buckets b
         LEFT JOIN 
-            TAB_UPDATES tu ON tu.timestamp >= b.bucket_start 
-                           AND tu.timestamp < b.bucket_start + interval '15 minutes'
+            browse_event event ON event.timestamp >= b.bucket_start 
+                               AND event.timestamp < b.bucket_start + interval '15 minutes'
         GROUP BY 
             b.bucket_start
         ORDER BY 
@@ -163,7 +177,7 @@ pub fn create_router(pool: PgPool) -> Router {
         .allow_headers([CONTENT_TYPE]);
 
     Router::new()
-        .route("/log_event", post(log_tab_update_event))
+        .route("/log_event", post(log_browse_event))
         .route("/create_table", post(create_tab_updates_table))
         .route("/return_all_events", get(return_all_events))
         .route("/get_tab_view_buckets", get(get_tab_view_buckets))
