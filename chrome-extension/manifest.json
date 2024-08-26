@@ -8,6 +8,10 @@
     "permissions": [
         "tabs", "scripting", "activeTab"
     ],
+    "host_permissions": [
+        "https://*/*",
+        "http://*/*"
+    ],
     "background": {
         "service_worker": "dist/service-worker.js"
     }
