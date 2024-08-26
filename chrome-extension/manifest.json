@@ -6,7 +6,7 @@
         "16": "images/icon-16.png"
     },
     "permissions": [
-        "tabs"
+        "tabs", "scripting", "activeTab"
     ],
     "background": {
         "service_worker": "service-worker.js"
