@@ -6,7 +6,6 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use dotenv::{dotenv, var};
-use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
 use tower_http::cors::CorsLayer;
@@ -30,6 +29,11 @@ struct BrowseEventRow {
     event_type: String,
 }
 
+struct PageInfoRow {
+    page_url: String,
+    page_embedding: pgvector::Vector,
+}
+
 #[derive(Deserialize, Serialize, FromRow, Debug)]
 struct TabViewBucket {
     timestamp_bucket: Option<String>,
@@ -37,6 +41,8 @@ struct TabViewBucket {
 }
 
 fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
+    // TODO: technically we don't need this since we don't read this urls. but
+    //       we should add more urls to this
     if browse_event.page_url == "chrome://extensions" {
         return true;
     }

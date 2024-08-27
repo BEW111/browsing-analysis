@@ -50,27 +50,53 @@ function getPageContent() {
 // Tab updates (changing the contents of the tab, e.g. clicking a link)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete") {
-    chrome.scripting
-      .executeScript({
-        target: { tabId: tabId },
-        func: getPageContent,
-      })
-      .then((pageContentResults) => {
-        if (pageContentResults.length > 0) {
-          let pageContent = pageContentResults[0].result;
-          if (pageContent && tab.url && tab.title) {
-            sendBrowseEvent(tabId, tab.url, tab.title, pageContent, "update");
+    try {
+      chrome.scripting
+        .executeScript({
+          target: { tabId: tabId },
+          func: getPageContent,
+        })
+        .then((pageContentResults) => {
+          if (pageContentResults.length > 0) {
+            let pageContent = pageContentResults[0].result;
+            if (pageContent && tab.url && tab.title) {
+              sendBrowseEvent(tabId, tab.url, tab.title, pageContent, "update");
+            }
           }
-        }
-      });
+        });
+    } catch (error) {
+      console.log(error);
+    }
   }
 });
 
 // Tab activation (clicking on a tab, also creating)
 chrome.tabs.onActivated.addListener((activeInfo) => {
   chrome.tabs.get(activeInfo.tabId, (tab) => {
-    if (tab.id && tab.url && tab.title) {
-      sendBrowseEvent(tab.id, tab.url, tab.title, null, "activate");
+    if (tab.id) {
+      try {
+        chrome.scripting
+          .executeScript({
+            target: { tabId: tab.id },
+            func: getPageContent,
+          })
+          .then((pageContentResults) => {
+            if (pageContentResults.length > 0) {
+              let pageContent = pageContentResults[0].result;
+              if (pageContent && tab.id && tab.url && tab.title) {
+                sendBrowseEvent(
+                  tab.id,
+                  tab.url,
+                  tab.title,
+                  pageContent,
+                  "activate"
+                );
+              }
+            }
+          });
+      } catch (error) {
+        console.log(error);
+      }
     }
   });
 });

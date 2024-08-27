@@ -9,6 +9,7 @@ chrono = { version = "0.4.38", features = ["serde"] }
 dotenv = "0.15.0"
 futures = "0.3.30"
 serde = "1.0.208"
-sqlx = { version = "0.8.0", features = ["postgres", "runtime-tokio", "chrono"] }
+sqlx = { version = "0.8.1", features = ["postgres", "runtime-tokio", "chrono"] }
 tokio = { version = "1.39.2", features = ["macros", "rt-multi-thread"] }
 tower-http = { version = "0.5.2", features = ["cors"] }
+pgvector = { version = "0.4", features = ["sqlx"] }
