@@ -1,3 +1,5 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use axum::{
     extract::State,
     http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
@@ -6,6 +8,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use dotenv::{dotenv, var};
+use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
 use tower_http::cors::CorsLayer;
@@ -29,9 +32,11 @@ struct BrowseEventRow {
     event_type: String,
 }
 
+#[derive(FromRow, Debug)]
 struct PageInfoRow {
     page_url: String,
     page_embedding: pgvector::Vector,
+    page_cluster_id: String,
 }
 
 #[derive(Deserialize, Serialize, FromRow, Debug)]
@@ -48,6 +53,88 @@ fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
     }
 
     false
+}
+
+fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
+    // TODO: make this cleaner, error check for vecs of same length
+
+    let dot_product = v1
+        .iter()
+        .zip(v2.iter())
+        .fold(0.0, |acc, (x1, x2)| acc + (x1 * x2));
+    let v1_norm = v1.iter().fold(0.0, |acc, x| acc + (x * x)).sqrt();
+    let v2_norm = v2.iter().fold(0.0, |acc, x| acc + (x * x)).sqrt();
+    return dot_product / (v1_norm * v2_norm);
+}
+
+async fn update_page_info(
+    pool: &PgPool,
+    browse_event: &BrowseEventFromChromeExtension,
+) -> Result<Option<PageInfoRow>, sqlx::Error> {
+    let check_row_exists_query_result = sqlx::query!(
+        r#"
+        SELECT COUNT(*) as num_pages FROM page_info
+        WHERE page_url = $1
+        LIMIT 1
+        "#,
+        browse_event.page_url
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if let Some(num_pages) = check_row_exists_query_result.num_pages {
+        if num_pages < 1 {
+            // TODO: Calculate embedding from page here
+            let mut page_embedding_vec = Vec::new();
+            for _ in 0..384 {
+                page_embedding_vec.push(0.1)
+            }
+            let page_embedding = pgvector::Vector::from(page_embedding_vec);
+
+            // TODO: Find the closest embedding to this one here, and set the cluster id
+            //       appropriately
+            let nearest_page_info_row: PageInfoRow = sqlx::query_as(
+                r#"
+                SELECT * FROM page_info ORDER BY page_embedding <-> $1 LIMIT 1
+                "#,
+            )
+            .bind(&page_embedding)
+            .fetch_one(pool)
+            .await?;
+
+            let nearest_page_similarity = cosine_similarity(
+                nearest_page_info_row.page_embedding.to_vec(),
+                page_embedding.to_vec(),
+            );
+
+            let page_cluster_id = match nearest_page_similarity > 0.8 {
+                true => nearest_page_info_row.page_cluster_id,
+                false => {
+                    // TODO: need a better way to come up with cluster ids
+                    let mut hasher = DefaultHasher::new();
+                    browse_event.page_url.hash(&mut hasher);
+                    hasher.finish().to_string()
+                }
+            };
+
+            // Insert the new embedding and cluster id
+            let page_info_row: PageInfoRow = sqlx::query_as(
+                r#"
+                    INSERT INTO page_info (page_url, page_embedding, page_cluster_id)
+                    VALUES ($1, $2, $3)
+                    RETURNING *
+                    "#,
+            )
+            .bind(&browse_event.page_url)
+            .bind(&page_embedding)
+            .bind(page_cluster_id)
+            .fetch_one(pool)
+            .await?;
+
+            return Ok(Some(page_info_row));
+        }
+    }
+    Ok(None)
 }
 
 async fn log_browse_event(
@@ -79,9 +166,20 @@ async fn log_browse_event(
     .await;
 
     match insert_tab_update_result {
-        Ok(uploaded_row) => Ok(Json(Some(uploaded_row))),
+        Ok(uploaded_row) => {
+            // TODO: see if there is a nice way to map errors
+            let update_page_info_result = update_page_info(&pool, &browse_event).await;
+
+            match update_page_info_result {
+                Ok(_) => Ok(Json(Some(uploaded_row))),
+                Err(e) => {
+                    println!("Failed to upload page info: {:?}", e.to_string());
+                    Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+                }
+            }
+        }
         Err(e) => {
-            println!("Failed to upload event");
+            println!("Failed to upload event: {:?}", e.to_string());
             Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
         }
     }
@@ -100,29 +198,6 @@ async fn return_all_events(
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     collected_events
-}
-
-async fn create_tab_updates_table(
-    State(pool): State<PgPool>,
-) -> Result<&'static str, (StatusCode, String)> {
-    let query = sqlx::query_as!(
-        BrowseEventRow,
-        "
-        CREATE TABLE IF NOT EXISTS TAB_UPDATES (
-            id SERIAL PRIMARY KEY,
-            timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
-            tab_id int NOT NULL,
-            url TEXT NOT NULL,
-            title TEXT NOT NULL,
-            visit_type TEXT NOT NULL
-        )
-        ",
-    );
-
-    match query.execute(&pool).await {
-        Ok(_) => Ok("Table 'events' created successfully"),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
-    }
 }
 
 async fn get_tab_view_buckets(
@@ -184,7 +259,6 @@ pub fn create_router(pool: PgPool) -> Router {
 
     Router::new()
         .route("/log_event", post(log_browse_event))
-        .route("/create_table", post(create_tab_updates_table))
         .route("/return_all_events", get(return_all_events))
         .route("/get_tab_view_buckets", get(get_tab_view_buckets))
         .with_state(pool)

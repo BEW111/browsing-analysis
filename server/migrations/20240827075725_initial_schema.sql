@@ -1,4 +1,3 @@
--- Add migration script here
 CREATE EXTENSION vector;
 
 CREATE TABLE IF NOT EXISTS browse_event (
@@ -12,5 +11,6 @@ CREATE TABLE IF NOT EXISTS browse_event (
 
 CREATE TABLE IF NOT EXISTS page_info (
     page_url TEXT PRIMARY KEY,
-    page_embedding vector(384)
+    page_embedding vector(384) NOT NULL,
+    page_cluster_id TEXT NOT NULL
 );
