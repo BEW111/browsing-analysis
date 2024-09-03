@@ -1,5 +1,6 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+use anyhow::{Context, Error};
 use axum::{
     extract::State,
     http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
@@ -8,6 +9,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use dotenv::{dotenv, var};
+use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
@@ -32,7 +34,18 @@ struct BrowseEventRow {
     event_type: String,
 }
 
-#[derive(FromRow, Debug)]
+#[derive(Deserialize, Serialize, FromRow, Debug)]
+struct BrowseEventRowWithCluster {
+    id: i32,
+    timestamp: DateTime<Utc>,
+    tab_id: i32,
+    page_url: String,
+    page_title: String,
+    page_cluster_id: Option<String>,
+    event_type: String,
+}
+
+#[derive(FromRow)]
 struct PageInfoRow {
     page_url: String,
     page_embedding: pgvector::Vector,
@@ -67,10 +80,11 @@ fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
     return dot_product / (v1_norm * v2_norm);
 }
 
+// TODO: move all hard-coded constants in here outside
 async fn update_page_info(
     pool: &PgPool,
     browse_event: &BrowseEventFromChromeExtension,
-) -> Result<Option<PageInfoRow>, sqlx::Error> {
+) -> Result<Option<PageInfoRow>, Error> {
     let check_row_exists_query_result = sqlx::query!(
         r#"
         SELECT COUNT(*) as num_pages FROM page_info
@@ -82,56 +96,87 @@ async fn update_page_info(
     .fetch_one(pool)
     .await?;
 
+    let embedding_model = TextEmbedding::try_new(
+        InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true),
+    )?;
+
     if let Some(num_pages) = check_row_exists_query_result.num_pages {
         if num_pages < 1 {
-            // TODO: Calculate embedding from page here
-            let mut page_embedding_vec = Vec::new();
-            for _ in 0..384 {
-                page_embedding_vec.push(0.1)
-            }
-            let page_embedding = pgvector::Vector::from(page_embedding_vec);
+            if let Some(page_content) = &browse_event.page_content {
+                // TODO: Calculate embedding from page here
+                // - Parse the plain text from the html
+                // - Put into embedding model
+                // - Later on it would be nice to abstract this into a module where we
+                //   retrieve (from some `browse_event`) the embedding, keywords, etc.
 
-            // TODO: Find the closest embedding to this one here, and set the cluster id
-            //       appropriately
-            let nearest_page_info_row: PageInfoRow = sqlx::query_as(
-                r#"
+                // TODO: Parse the plain text from the html
+
+                // Generate the embedding
+                println!("Creating page embedding...");
+                let pages_to_embed = vec![page_content];
+                let page_embedding_vec = embedding_model
+                    .embed(pages_to_embed, None)?
+                    .pop()
+                    .context("List of embeddings is empty")?;
+                println!("Created embedding.");
+
+                let page_embedding = pgvector::Vector::from(page_embedding_vec);
+
+                // Find the closest embedding to this one here, and set the cluster id appropriately
+                let nearest_page_info_row_option: Option<PageInfoRow> = sqlx::query_as(
+                    r#"
                 SELECT * FROM page_info ORDER BY page_embedding <-> $1 LIMIT 1
                 "#,
-            )
-            .bind(&page_embedding)
-            .fetch_one(pool)
-            .await?;
+                )
+                .bind(&page_embedding)
+                .fetch_optional(pool)
+                .await?;
 
-            let nearest_page_similarity = cosine_similarity(
-                nearest_page_info_row.page_embedding.to_vec(),
-                page_embedding.to_vec(),
-            );
+                let page_cluster_id = match nearest_page_info_row_option {
+                    Some(nearest_page_info_row) => {
+                        let nearest_page_similarity = cosine_similarity(
+                            nearest_page_info_row.page_embedding.to_vec(),
+                            page_embedding.to_vec(),
+                        );
 
-            let page_cluster_id = match nearest_page_similarity > 0.8 {
-                true => nearest_page_info_row.page_cluster_id,
-                false => {
-                    // TODO: need a better way to come up with cluster ids
-                    let mut hasher = DefaultHasher::new();
-                    browse_event.page_url.hash(&mut hasher);
-                    hasher.finish().to_string()
-                }
-            };
+                        match nearest_page_similarity > 0.8 {
+                            true => nearest_page_info_row.page_cluster_id,
+                            false => {
+                                // TODO: need a better way to come up with cluster ids
+                                let mut hasher = DefaultHasher::new();
+                                browse_event.page_url.hash(&mut hasher);
+                                hasher.finish().to_string()
+                            }
+                        }
+                    }
+                    None => {
+                        // TODO: need a better way to come up with cluster ids
+                        let mut hasher = DefaultHasher::new();
+                        browse_event.page_url.hash(&mut hasher);
+                        hasher.finish().to_string()
+                    }
+                };
 
-            // Insert the new embedding and cluster id
-            let page_info_row: PageInfoRow = sqlx::query_as(
-                r#"
+                // Insert the new embedding and cluster id
+                println!("Inserting embedding into db");
+                let page_info_row: PageInfoRow = sqlx::query_as(
+                    r#"
                     INSERT INTO page_info (page_url, page_embedding, page_cluster_id)
                     VALUES ($1, $2, $3)
                     RETURNING *
                     "#,
-            )
-            .bind(&browse_event.page_url)
-            .bind(&page_embedding)
-            .bind(page_cluster_id)
-            .fetch_one(pool)
-            .await?;
+                )
+                .bind(&browse_event.page_url)
+                .bind(&page_embedding)
+                .bind(page_cluster_id)
+                .fetch_one(pool)
+                .await?;
+                println!("Finished inserting embedding!");
 
-            return Ok(Some(page_info_row));
+                return Ok(Some(page_info_row));
+            }
+        } else {
+            println!("Page has already been logged")
         }
     }
     Ok(None)
@@ -183,15 +228,19 @@ async fn log_browse_event(
             Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
         }
     }
-
-    // TODO: add page (unique) to a separate table to keep track of
-    // different pages
 }
 
 async fn return_all_events(
     State(pool): State<PgPool>,
-) -> Result<Json<Vec<BrowseEventRow>>, (StatusCode, String)> {
-    let stream = sqlx::query_as!(BrowseEventRow, r#"SELECT * FROM browse_event"#).fetch(&pool);
+) -> Result<Json<Vec<BrowseEventRowWithCluster>>, (StatusCode, String)> {
+    let stream = sqlx::query_as!(
+        BrowseEventRowWithCluster,
+        r#"
+        SELECT id, timestamp, tab_id, browse_event.page_url as page_url, page_title, page_cluster_id, event_type FROM browse_event
+        LEFT JOIN page_info ON browse_event.page_url = page_info.page_url
+        "#
+    )
+    .fetch(&pool);
     let collected_events = stream
         .try_collect::<Vec<_>>()
         .await

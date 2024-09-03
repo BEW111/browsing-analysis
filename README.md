@@ -17,7 +17,8 @@ a breakdown of those topics.
 ## Backend
 
 1. Start the postgres db with
-   `docker run -d --name browsing-analysis-db -p 5432:5432 -e POSTGRES_PASSWORD={your_password} -e POSTGRES_DB=browsing-analysis postgres`
+   `docker run -d --name browsing-analysis-db -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=browsing-analysis pgvector/pgvector:pg16`
+   - To enter the database, run
 2. Update your `.env` file appropriately.
 3. `cd server && cargo run`
 
