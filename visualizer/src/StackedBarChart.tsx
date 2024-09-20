@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
+import { format, parseISO } from "date-fns";
 
 type EventCountBucketRow = {
   timestamp_bucket: string;
@@ -29,12 +30,6 @@ type EventCountBucketInfo = {
   eventCountBuckets: EventCountBucket[];
   clusterKeys: ClusterKey[];
 };
-
-// // TODO: fix snake case to camel case
-// // TODO: adjust for timezone locale
-// const tickFormatter = (timestamp_bucket: string) => {
-//   return timestamp_bucket;
-// };
 
 const getEventCountBuckets = (
   eventCountBucketRows: EventCountBucketRow[]
@@ -85,21 +80,36 @@ const StackedBarChart: React.FC<{
     getEventCountBuckets(eventCountBucketRows);
   console.log(eventCountBuckets);
 
-  const colors = ["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#a4de6c"]; // Add more colors as needed
+  const formatXAxis = (tickItem: string) => {
+    return format(parseISO(tickItem), "HH:mm");
+  };
+
+  const stringToColor = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    let color = "#";
+    for (let i = 0; i < 3; i++) {
+      const value = (hash >> (i * 8)) & 0xff;
+      color += ("00" + value.toString(16)).slice(-2);
+    }
+    return color;
+  };
 
   return (
     <BarChart width={800} height={400} data={eventCountBuckets}>
       <CartesianGrid strokeDasharray="3 3" />
-      <XAxis dataKey="timestamp_bucket" />
+      <XAxis dataKey="timestamp_bucket" tickFormatter={formatXAxis} />
       <YAxis />
       <Tooltip />
       <Legend />
-      {clusterKeys.map((clusterKey, index) => (
+      {clusterKeys.map((clusterKey) => (
         <Bar
           key={clusterKey}
           dataKey={clusterKey}
-          stackId="a"
-          fill={colors[index % colors.length]}
+          stackId="constant_id_because_we_want_to_stack"
+          fill={stringToColor(clusterKey)}
         />
       ))}
     </BarChart>
