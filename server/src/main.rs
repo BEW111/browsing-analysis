@@ -7,7 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use dotenv::{dotenv, var};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::TryStreamExt;
@@ -53,13 +53,14 @@ struct PageInfoRow {
 }
 
 #[derive(Deserialize, Serialize, FromRow, Debug)]
-struct TabViewBucket {
-    timestamp_bucket: Option<String>,
-    tab_view_count: Option<i64>,
+struct EventCountBucket {
+    timestamp_bucket: Option<NaiveDateTime>,
+    cluster_id: Option<String>,
+    event_count: Option<i64>,
 }
 
 fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
-    // TODO: technically we don't need this since we don't read this urls. but
+    // TODO: technically we don't need this since we don't read this url. but
     //       we should add more urls to this
     if browse_event.page_url == "chrome://extensions" {
         return true;
@@ -103,13 +104,13 @@ async fn update_page_info(
     if let Some(num_pages) = check_row_exists_query_result.num_pages {
         if num_pages < 1 {
             if let Some(page_content) = &browse_event.page_content {
-                // TODO: Calculate embedding from page here
+                // Calculate embedding from page here
                 // - Parse the plain text from the html
                 // - Put into embedding model
                 // - Later on it would be nice to abstract this into a module where we
                 //   retrieve (from some `browse_event`) the embedding, keywords, etc.
 
-                // TODO: Parse the plain text from the html
+                // TODO: Parse the plain text from the html; don't just embed the html directly
 
                 // Generate the embedding
                 println!("Creating page embedding...");
@@ -187,12 +188,12 @@ async fn log_browse_event(
     Json(browse_event): Json<BrowseEventFromChromeExtension>,
 ) -> Result<Json<Option<BrowseEventRow>>, (StatusCode, String)> {
     if should_ignore_event(&browse_event) {
-        println!("Ignored event: {:?}", browse_event);
+        println!("Ignored event: {:?}", browse_event.page_url);
         return Ok(Json(None));
     }
 
     // TODO: ignore events that are to chrome://extensions, etc.
-    println!("Logging event: {:?}", browse_event);
+    println!("Logging event: {:?}", browse_event.page_url);
 
     let insert_tab_update_result = sqlx::query_as!(
         BrowseEventRow,
@@ -249,38 +250,35 @@ async fn return_all_events(
     collected_events
 }
 
-async fn get_tab_view_buckets(
+async fn get_event_buckets(
     State(pool): State<PgPool>,
-) -> Result<Json<Vec<TabViewBucket>>, (StatusCode, String)> {
+) -> Result<Json<Vec<EventCountBucket>>, (StatusCode, String)> {
     let stream = sqlx::query_as!(
-        TabViewBucket,
-        // TODO: add time range and interval as query params
+        EventCountBucket,
+        // TODO: add timezone, time range, and interval as query params
         r#"
-        WITH time_range AS (
-            SELECT 
-                date_trunc('hour', NOW() - INTERVAL '24 hours') AS start_time,
-                date_trunc('hour', NOW()) AS end_time
-        ),
-        time_buckets AS (
-            SELECT generate_series(
-                start_time,
-                end_time,
-                interval '15 minutes'
-            ) AS bucket_start
-            FROM time_range
+        WITH today_events AS (
+            SELECT
+                timestamp AT TIME ZONE 'America/New_York' AS local_time, page_cluster_id
+            FROM
+                browse_event be
+                JOIN page_info pi ON be.page_url = pi.page_url
+            WHERE timestamp AT TIME ZONE 'America/New_York' >= DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York')
+                AND timestamp AT TIME ZONE 'America/New_York' < DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') + INTERVAL '1 day'
+            ORDER BY timestamp DESC
         )
-        SELECT 
-            to_char(b.bucket_start, 'YYYY-MM-DD HH24:MI') AS timestamp_bucket,
-            COUNT(event.id) AS tab_view_count
-        FROM 
-            time_buckets b
-        LEFT JOIN 
-            browse_event event ON event.timestamp >= b.bucket_start 
-                               AND event.timestamp < b.bucket_start + interval '15 minutes'
-        GROUP BY 
-            b.bucket_start
-        ORDER BY 
-            b.bucket_start;
+        SELECT
+            DATE_TRUNC('hour', local_time) AS timestamp_bucket,
+            page_cluster_id AS cluster_id,
+            COUNT(*) AS event_count
+        FROM
+            today_events
+        GROUP BY
+            DATE_TRUNC('hour', local_time),
+            page_cluster_id
+        ORDER BY
+            timestamp_bucket,
+            cluster_id
     "#
     )
     .fetch(&pool);
@@ -309,7 +307,7 @@ pub fn create_router(pool: PgPool) -> Router {
     Router::new()
         .route("/log_event", post(log_browse_event))
         .route("/return_all_events", get(return_all_events))
-        .route("/get_tab_view_buckets", get(get_tab_view_buckets))
+        .route("/get_event_buckets", get(get_event_buckets))
         .with_state(pool)
         .layer(cors)
 }
