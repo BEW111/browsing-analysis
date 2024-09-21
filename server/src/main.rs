@@ -257,13 +257,13 @@ async fn get_event_buckets(
         EventCountBucket,
         // TODO: add timezone, time range, and interval as query params
         r#"
-        WITH today_events AS (
+        WITH timerange_events AS (
             SELECT
                 timestamp AT TIME ZONE 'America/New_York' AS local_time, page_cluster_id
             FROM
                 browse_event be
                 JOIN page_info pi ON be.page_url = pi.page_url
-            WHERE timestamp AT TIME ZONE 'America/New_York' >= DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York')
+            WHERE timestamp AT TIME ZONE 'America/New_York' >= DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') - INTERVAL '1 day'
                 AND timestamp AT TIME ZONE 'America/New_York' < DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') + INTERVAL '1 day'
             ORDER BY timestamp DESC
         )
@@ -272,7 +272,7 @@ async fn get_event_buckets(
             page_cluster_id AS cluster_id,
             COUNT(*) AS event_count
         FROM
-            today_events
+            timerange_events
         GROUP BY
             DATE_TRUNC('hour', local_time),
             page_cluster_id

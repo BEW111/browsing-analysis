@@ -1,12 +1,4 @@
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Legend,
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { format, parseISO } from "date-fns";
 
 type EventCountBucketRow = {
@@ -103,7 +95,6 @@ const StackedBarChart: React.FC<{
       <XAxis dataKey="timestamp_bucket" tickFormatter={formatXAxis} />
       <YAxis />
       <Tooltip />
-      <Legend />
       {clusterKeys.map((clusterKey) => (
         <Bar
           key={clusterKey}
