@@ -1,63 +1,26 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+mod cluster;
+mod embedding;
+mod models;
 
-use anyhow::{Context, Error};
+use cluster::assign_cluster;
+use embedding::generate_pgvector_embedding;
+use models::{
+    BrowseEventFromChromeExtension, BrowseEventRow, BrowseEventRowWithCluster, EventCountBucket,
+    PageInfoRow,
+};
+
+use anyhow::Error;
 use axum::{
     extract::State,
     http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
     routing::{get, post},
     Json, Router,
 };
-use chrono::{DateTime, NaiveDateTime, Utc};
 use dotenv::{dotenv, var};
-use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::TryStreamExt;
-use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgPoolOptions, FromRow, PgPool};
+use sqlx::{postgres::PgPoolOptions, PgPool};
+
 use tower_http::cors::CorsLayer;
-
-#[derive(Deserialize, Serialize, FromRow, Debug)]
-struct BrowseEventFromChromeExtension {
-    tab_id: i32,
-    timestamp: DateTime<Utc>,
-    page_url: String,
-    page_title: String,
-    page_content: Option<String>,
-    event_type: String, // TODO: make this into an enum
-}
-#[derive(Deserialize, Serialize, FromRow, Debug)]
-struct BrowseEventRow {
-    id: i32,
-    timestamp: DateTime<Utc>,
-    tab_id: i32,
-    page_url: String,
-    page_title: String,
-    event_type: String,
-}
-
-#[derive(Deserialize, Serialize, FromRow, Debug)]
-struct BrowseEventRowWithCluster {
-    id: i32,
-    timestamp: DateTime<Utc>,
-    tab_id: i32,
-    page_url: String,
-    page_title: String,
-    page_cluster_id: Option<String>,
-    event_type: String,
-}
-
-#[derive(FromRow)]
-struct PageInfoRow {
-    page_url: String,
-    page_embedding: pgvector::Vector,
-    page_cluster_id: String,
-}
-
-#[derive(Deserialize, Serialize, FromRow, Debug)]
-struct EventCountBucket {
-    timestamp_bucket: Option<NaiveDateTime>,
-    cluster_id: Option<String>,
-    event_count: Option<i64>,
-}
 
 fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
     // TODO: technically we don't need this since we don't read this url. but
@@ -67,18 +30,6 @@ fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
     }
 
     false
-}
-
-fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
-    // TODO: make this cleaner, error check for vecs of same length
-
-    let dot_product = v1
-        .iter()
-        .zip(v2.iter())
-        .fold(0.0, |acc, (x1, x2)| acc + (x1 * x2));
-    let v1_norm = v1.iter().fold(0.0, |acc, x| acc + (x * x)).sqrt();
-    let v2_norm = v2.iter().fold(0.0, |acc, x| acc + (x * x)).sqrt();
-    return dot_product / (v1_norm * v2_norm);
 }
 
 // TODO: move all hard-coded constants in here outside
@@ -97,66 +48,14 @@ async fn update_page_info(
     .fetch_one(pool)
     .await?;
 
-    let embedding_model = TextEmbedding::try_new(
-        InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true),
-    )?;
-
     if let Some(num_pages) = check_row_exists_query_result.num_pages {
         if num_pages < 1 {
             if let Some(page_content) = &browse_event.page_content {
-                // Calculate embedding from page here
-                // - Parse the plain text from the html
-                // - Put into embedding model
-                // - Later on it would be nice to abstract this into a module where we
-                //   retrieve (from some `browse_event`) the embedding, keywords, etc.
+                // Generate embedding
+                let page_embedding = generate_pgvector_embedding(page_content)?;
 
-                // TODO: Parse the plain text from the html; don't just embed the html directly
-
-                // Generate the embedding
-                println!("Creating page embedding...");
-                let pages_to_embed = vec![page_content];
-                let page_embedding_vec = embedding_model
-                    .embed(pages_to_embed, None)?
-                    .pop()
-                    .context("List of embeddings is empty")?;
-                println!("Created embedding.");
-
-                let page_embedding = pgvector::Vector::from(page_embedding_vec);
-
-                // Find the closest embedding to this one here, and set the cluster id appropriately
-                let nearest_page_info_row_option: Option<PageInfoRow> = sqlx::query_as(
-                    r#"
-                SELECT * FROM page_info ORDER BY page_embedding <-> $1 LIMIT 1
-                "#,
-                )
-                .bind(&page_embedding)
-                .fetch_optional(pool)
-                .await?;
-
-                let page_cluster_id = match nearest_page_info_row_option {
-                    Some(nearest_page_info_row) => {
-                        let nearest_page_similarity = cosine_similarity(
-                            nearest_page_info_row.page_embedding.to_vec(),
-                            page_embedding.to_vec(),
-                        );
-
-                        match nearest_page_similarity > 0.8 {
-                            true => nearest_page_info_row.page_cluster_id,
-                            false => {
-                                // TODO: need a better way to come up with cluster ids
-                                let mut hasher = DefaultHasher::new();
-                                browse_event.page_url.hash(&mut hasher);
-                                hasher.finish().to_string()
-                            }
-                        }
-                    }
-                    None => {
-                        // TODO: need a better way to come up with cluster ids
-                        let mut hasher = DefaultHasher::new();
-                        browse_event.page_url.hash(&mut hasher);
-                        hasher.finish().to_string()
-                    }
-                };
+                // Assign page to cluster
+                let page_cluster_id = assign_cluster(pool, browse_event, &page_embedding).await?;
 
                 // Insert the new embedding and cluster id
                 println!("Inserting embedding into db");
