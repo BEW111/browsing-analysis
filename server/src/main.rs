@@ -1,4 +1,5 @@
 mod cluster;
+mod config;
 mod embedding;
 mod models;
 
@@ -16,7 +17,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use dotenv::{dotenv, var};
 use futures::TryStreamExt;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
@@ -190,12 +190,10 @@ async fn get_event_buckets(
     collected_events
 }
 
-pub fn create_router(pool: PgPool) -> Router {
+pub fn create_router(db: PgPool, config: &config::Config) -> Router {
     let origins = [
-        "http://localhost:5173".parse::<HeaderValue>().unwrap(),
-        "chrome-extension://cdghahhpdoaipdkjjiokakeppeiikobh"
-            .parse::<HeaderValue>()
-            .unwrap(),
+        config.frontend_url.parse::<HeaderValue>().unwrap(),
+        config.extension_url.parse::<HeaderValue>().unwrap(),
     ];
 
     let cors = CorsLayer::new()
@@ -207,24 +205,24 @@ pub fn create_router(pool: PgPool) -> Router {
         .route("/log_event", post(log_browse_event))
         .route("/return_all_events", get(return_all_events))
         .route("/get_event_buckets", get(get_event_buckets))
-        .with_state(pool)
+        .with_state(db)
         .layer(cors)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv().ok();
+    let config = config::load_config()?;
 
-    let database_url = var("DATABASE_URL").map_err(|_e| "Couldn't find DATABASE_URL env var")?;
-
-    let pool = PgPoolOptions::new()
+    let db = PgPoolOptions::new()
         .max_connections(5)
-        .connect(database_url.as_str())
+        .connect(&config.database_url)
         .await?;
 
-    let app = create_router(pool);
+    let app = create_router(db, &config);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&config.server_address)
+        .await
+        .unwrap();
     axum::serve(listener, app).await.unwrap();
 
     Ok(())
