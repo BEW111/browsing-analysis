@@ -1,14 +1,14 @@
 mod cluster;
 mod config;
-mod embedding;
 mod models;
+mod page_processing;
 
 use cluster::assign_cluster;
-use embedding::generate_pgvector_embedding;
 use models::{
-    BrowseEventFromChromeExtension, BrowseEventRow, BrowseEventRowWithCluster, EventCountBucket,
-    PageInfoRow,
+    BrowseEventFromChromeExtension, BrowseEventRow, BrowseEventRowWithCluster, ClusterRow,
+    EventCountBucket, PageInfoRow,
 };
+use page_processing::{extract_keywords, generate_markdown, generate_pgvector_embedding};
 
 use anyhow::Error;
 use axum::{
@@ -32,6 +32,52 @@ fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
     false
 }
 
+async fn update_cluster_info(
+    page_markdown: &String,
+    cluster_id: &String,
+    pool: &PgPool,
+) -> Result<Option<ClusterRow>, Error> {
+    let check_row_exists_query_result = sqlx::query!(
+        r#"
+        SELECT COUNT(*) as num_clusters FROM cluster
+        WHERE id = $1
+        LIMIT 1
+        "#,
+        cluster_id
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if let Some(num_clusters) = check_row_exists_query_result.num_clusters {
+        if num_clusters < 1 {
+            println!("Adding cluster info");
+
+            let keywords = extract_keywords(page_markdown, 5);
+            println!("{:?}", keywords);
+
+            let cluster_name = keywords.join(" ");
+
+            let cluster_row: ClusterRow = sqlx::query_as(
+                r#"
+                INSERT INTO cluster (id, name)
+                VALUES ($1, $2)
+                RETURNING *
+                "#,
+            )
+            .bind(cluster_id)
+            .bind(cluster_name)
+            .fetch_one(pool)
+            .await?;
+
+            return Ok(Some(cluster_row));
+        }
+    }
+
+    println!("Cluster info already exists");
+
+    Ok(None)
+}
+
 // TODO: move all hard-coded constants in here outside
 async fn update_page_info(
     pool: &PgPool,
@@ -51,10 +97,8 @@ async fn update_page_info(
     if let Some(num_pages) = check_row_exists_query_result.num_pages {
         if num_pages < 1 {
             if let Some(page_content) = &browse_event.page_content {
-                // Generate embedding
-                let page_embedding = generate_pgvector_embedding(page_content)?;
-
-                // Assign page to cluster
+                let page_markdown = generate_markdown(page_content)?;
+                let page_embedding = generate_pgvector_embedding(&page_markdown)?;
                 let page_cluster_id = assign_cluster(pool, browse_event, &page_embedding).await?;
 
                 // Insert the new embedding and cluster id
@@ -68,10 +112,12 @@ async fn update_page_info(
                 )
                 .bind(&browse_event.page_url)
                 .bind(&page_embedding)
-                .bind(page_cluster_id)
+                .bind(&page_cluster_id)
                 .fetch_one(pool)
                 .await?;
                 println!("Finished inserting embedding!");
+
+                update_cluster_info(&page_markdown, &page_cluster_id, pool).await?;
 
                 return Ok(Some(page_info_row));
             }
@@ -152,13 +198,13 @@ async fn return_all_events(
 async fn get_event_buckets(
     State(pool): State<PgPool>,
 ) -> Result<Json<Vec<EventCountBucket>>, (StatusCode, String)> {
-    let stream = sqlx::query_as!(
-        EventCountBucket,
+    let stream = sqlx::query_as(
         // TODO: add timezone, time range, and interval as query params
         r#"
         WITH timerange_events AS (
             SELECT
-                timestamp AT TIME ZONE 'America/New_York' AS local_time, page_cluster_id
+                timestamp AT TIME ZONE 'America/New_York' AS local_time, 
+                page_cluster_id
             FROM
                 browse_event be
                 JOIN page_info pi ON be.page_url = pi.page_url
@@ -167,14 +213,18 @@ async fn get_event_buckets(
             ORDER BY timestamp DESC
         )
         SELECT
-            DATE_TRUNC('hour', local_time) AS timestamp_bucket,
-            page_cluster_id AS cluster_id,
+            DATE_TRUNC('hour', te.local_time) AS timestamp_bucket,
+            te.page_cluster_id AS cluster_id,
+            c.name::TEXT AS cluster_name,
             COUNT(*) AS event_count
         FROM
-            timerange_events
+            timerange_events te
+        LEFT JOIN
+            cluster c ON te.page_cluster_id = c.id
         GROUP BY
-            DATE_TRUNC('hour', local_time),
-            page_cluster_id
+            DATE_TRUNC('hour', te.local_time),
+            te.page_cluster_id,
+            c.name
         ORDER BY
             timestamp_bucket,
             cluster_id

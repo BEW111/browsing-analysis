@@ -1,9 +1,18 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  TooltipProps,
+} from "recharts";
 import { format, parseISO } from "date-fns";
 
 type EventCountBucketRow = {
   timestamp_bucket: string;
   cluster_id: string;
+  cluster_name: string | null;
   event_count: number;
 };
 
@@ -13,9 +22,14 @@ type TimestampPartitionedBuckets = {
 
 type ClusterKey = `event_count_cluster_${string}`;
 
+type PayloadValue = {
+  cluster_name: string | null;
+  value: number;
+};
+
 type EventCountBucket = {
   timestamp_bucket: string;
-  [cluster_id: ClusterKey]: number;
+  [cluster_id: ClusterKey]: PayloadValue;
 };
 
 type EventCountBucketInfo = {
@@ -52,13 +66,46 @@ const getEventCountBuckets = (
       if (!clusterKeys.includes(clusterKey)) {
         clusterKeys.push(clusterKey);
       }
-      eventCountBucket[clusterKey] = row.event_count;
+      eventCountBucket[clusterKey] = {
+        cluster_name: row.cluster_name,
+        value: row.event_count,
+      };
     });
 
     eventCountBuckets.push(eventCountBucket);
   });
 
   return { eventCountBuckets, clusterKeys };
+};
+
+const CustomTooltip = ({
+  active,
+  payload,
+  label,
+}: TooltipProps<number, string>) => {
+  if (active && payload && payload.length) {
+    const currentBarPayload = payload[0].payload;
+
+    return (
+      <div
+        className="custom-tooltip"
+        style={{
+          textAlign: "left",
+          backgroundColor: "rgba(0.9, 0.9, 0.9, 0.1)",
+        }}
+      >
+        {Object.entries(currentBarPayload).map(([clusterId, clusterInfo]) => (
+          <div>
+            <p className="desc" style={{ fontSize: 12, color: "white" }}>
+              {clusterInfo.cluster_name || clusterId}: {clusterInfo.value}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return null;
 };
 
 const StackedBarChart: React.FC<{
@@ -94,11 +141,11 @@ const StackedBarChart: React.FC<{
       <CartesianGrid strokeDasharray="3 3" />
       <XAxis dataKey="timestamp_bucket" tickFormatter={formatXAxis} />
       <YAxis />
-      <Tooltip />
+      <Tooltip content={<CustomTooltip />} />
       {clusterKeys.map((clusterKey) => (
         <Bar
           key={clusterKey}
-          dataKey={clusterKey}
+          dataKey={(item) => item[clusterKey]?.value || 0}
           stackId="constant_id_because_we_want_to_stack"
           fill={stringToColor(clusterKey)}
         />
