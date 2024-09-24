@@ -3,7 +3,10 @@ use pgvector::Vector;
 use sqlx::PgPool;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use crate::models::{BrowseEventFromChromeExtension, PageInfoRow, PageInfoRowWithCluster};
+use crate::{
+    db::page_info::get_nearest_page_info,
+    models::{BrowseEventFromChromeExtension, PageInfoRowWithCluster},
+};
 
 fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
     // TODO: make this cleaner, error check for vecs of same length
@@ -18,20 +21,14 @@ fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
 }
 
 pub async fn assign_cluster(
-    pool: &PgPool,
+    db: &PgPool,
     browse_event: &BrowseEventFromChromeExtension,
     page_embedding: &Vector,
 ) -> Result<String, Error> {
-    let nearest_page_info_row: Option<PageInfoRowWithCluster> = sqlx::query_as(
-        r#"
-    SELECT page_info.page_url as page_url, page_embedding, cluster_id FROM page_info
-    JOIN cluster_assignment ca on page_info.page_url = ca.page_url 
-    ORDER BY page_embedding <-> $1 LIMIT 1
-    "#,
-    )
-    .bind(&page_embedding)
-    .fetch_optional(pool)
-    .await?;
+    let close_enough_cluster_distance = 0.8;
+
+    let nearest_page_info_row: Option<PageInfoRowWithCluster> =
+        get_nearest_page_info(db, page_embedding).await?;
 
     let page_cluster_id = match nearest_page_info_row {
         Some(nearest_page_info_row) => {
@@ -40,8 +37,8 @@ pub async fn assign_cluster(
                 page_embedding.to_vec(),
             );
 
-            match nearest_page_similarity > 0.8 {
-                true => nearest_page_info_row.page_cluster_id,
+            match nearest_page_similarity > close_enough_cluster_distance {
+                true => nearest_page_info_row.cluster_id,
                 false => {
                     // TODO: need a better way to come up with cluster ids
                     let mut hasher = DefaultHasher::new();

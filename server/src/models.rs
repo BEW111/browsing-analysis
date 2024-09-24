@@ -42,7 +42,7 @@ pub struct PageInfoRow {
 pub struct PageInfoRowWithCluster {
     pub page_url: String,
     pub page_embedding: pgvector::Vector,
-    pub page_cluster_id: String,
+    pub cluster_id: String,
 }
 
 #[derive(Deserialize, Serialize, FromRow, Debug)]
@@ -57,4 +57,12 @@ pub struct EventCountBucket {
 pub struct ClusterRow {
     pub id: String,
     pub name: String,
+    pub clustering_run_id: i32,
+}
+
+#[derive(FromRow)]
+pub struct ClusterAssignmentRow {
+    pub id: i32,
+    pub page_url: String,
+    pub cluster_id: String,
 }

@@ -1,7 +1,7 @@
 use pgvector::Vector;
 use sqlx::{Error, PgPool};
 
-use crate::models::PageInfoRow;
+use crate::models::{PageInfoRow, PageInfoRowWithCluster};
 
 pub async fn check_page_info_exists(db: &PgPool, page_url: &String) -> Result<bool, Error> {
     let check_row_exists_query_result = sqlx::query!(
@@ -22,18 +22,32 @@ pub async fn insert_page_info(
     db: &PgPool,
     page_url: &String,
     page_embedding: &Vector,
-    page_cluster_id: &String,
 ) -> Result<PageInfoRow, Error> {
     sqlx::query_as(
         r#"
-            INSERT INTO page_info (page_url, page_embedding, page_cluster_id)
-            VALUES ($1, $2, $3)
+            INSERT INTO page_info (page_url, page_embedding)
+            VALUES ($1, $2)
             RETURNING *
             "#,
     )
     .bind(&page_url)
     .bind(&page_embedding)
-    .bind(&page_cluster_id)
     .fetch_one(db)
+    .await
+}
+
+pub async fn get_nearest_page_info(
+    db: &PgPool,
+    page_embedding: &Vector,
+) -> Result<Option<PageInfoRowWithCluster>, Error> {
+    sqlx::query_as(
+        r#"
+        SELECT page_info.page_url as page_url, page_embedding, cluster_id FROM page_info
+        JOIN cluster_assignment ca on page_info.page_url = ca.page_url 
+        ORDER BY page_embedding <-> $1 LIMIT 1
+        "#,
+    )
+    .bind(&page_embedding)
+    .fetch_optional(db)
     .await
 }

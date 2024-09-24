@@ -4,7 +4,7 @@ use sqlx::PgPool;
 
 use crate::db::{
     browse_event::insert_browse_event,
-    cluster::{check_cluster_exists, insert_cluster},
+    cluster::{check_cluster_exists, insert_cluster, insert_cluster_assignment},
     page_info::{check_page_info_exists, insert_page_info},
 };
 use crate::models::{BrowseEventFromChromeExtension, BrowseEventRow, ClusterRow, PageInfoRow};
@@ -60,17 +60,32 @@ async fn process_browse_event_page(
             let page_cluster_id = assign_cluster(db, browse_event, &page_embedding).await?;
 
             // Insert the new embedding and cluster id
-            println!("Inserting embedding into db...");
-            let page_info_row: PageInfoRow = insert_page_info(
-                db,
-                &browse_event.page_url,
-                &page_embedding,
-                &page_cluster_id,
-            )
-            .await?;
-            println!("Finished inserting embedding!");
+            // let page_info_row =
+            //     insert_page_info(db, &browse_event.page_url, &page_embedding).await?;
 
-            update_cluster_info(&page_markdown, &page_cluster_id, db).await?;
+            // update_cluster_info(&page_markdown, &page_cluster_id, db).await?;
+            // insert_cluster_assignment(db, &browse_event.page_url, &page_cluster_id).await?;
+
+            let page_info_row =
+                match insert_page_info(db, &browse_event.page_url, &page_embedding).await {
+                    Ok(row) => row,
+                    Err(e) => {
+                        eprintln!("insert_page_info: {:?}", e);
+                        return Err(e.into());
+                    }
+                };
+
+            if let Err(e) = update_cluster_info(&page_markdown, &page_cluster_id, db).await {
+                eprintln!("update_cluster_info: {:?}", e);
+                return Err(e.into());
+            }
+
+            if let Err(e) =
+                insert_cluster_assignment(db, &browse_event.page_url, &page_cluster_id).await
+            {
+                eprintln!("insert_cluster_assignment: {:?}", e);
+                return Err(e.into());
+            }
 
             return Ok(Some(page_info_row));
         }
@@ -89,9 +104,11 @@ async fn update_cluster_info(
     if !cluster_exists {
         // TODO: make `num_keywords` into a param/const
         let num_keywords = 5;
+        let clustering_run_id = 1;
         let cluster_keywords = extract_keywords(page_markdown, num_keywords);
         let cluster_name = cluster_keywords.join(" ");
-        let cluster_row: ClusterRow = insert_cluster(db, &cluster_id, &cluster_name).await?;
+        let cluster_row: ClusterRow =
+            insert_cluster(db, &cluster_id, &cluster_name, clustering_run_id).await?;
 
         return Ok(Some(cluster_row));
     }
