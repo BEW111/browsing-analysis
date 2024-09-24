@@ -7,7 +7,8 @@ use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::config::Config;
-use crate::handlers::{get_event_buckets, log_browse_event, return_all_events};
+use crate::handlers::analytics_handlers::{get_event_buckets, return_all_events};
+use crate::handlers::browse_event_handlers::log_browse_event;
 
 pub fn create_router(db: PgPool, config: &Config) -> Router {
     let cors = create_cors_layer(config);
