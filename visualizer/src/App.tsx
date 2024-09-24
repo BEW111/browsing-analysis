@@ -1,43 +1,19 @@
-import { useEffect, useState } from "react";
-import "./App.css";
-import StackedBarChart from "./StackedBarChart";
-
-type EventCountBucketRow = {
-  timestamp_bucket: string;
-  cluster_id: string;
-  cluster_name: string | null;
-  event_count: number;
-};
+import { Card } from "@tremor/react";
+import ActivityStackedBarChart from "./components/ActivityStackedBarChart";
 
 function App() {
-  const [eventCountBuckets, setEventCountBuckets] = useState<
-    EventCountBucketRow[]
-  >([]);
-
-  const refreshTabViewBuckets = async () => {
-    const response = await fetch("http://localhost:8000/get_event_buckets");
-    const eventCountBucketsJson = await response.json();
-    const eventCountBuckets: EventCountBucketRow[] = eventCountBucketsJson.map(
-      (row: EventCountBucketRow) => ({
-        timestamp_bucket: row.timestamp_bucket,
-        cluster_id: row.cluster_id,
-        cluster_name: row.cluster_name,
-        event_count: row.event_count,
-      })
-    );
-
-    setEventCountBuckets(eventCountBuckets);
-  };
-
-  useEffect(() => {
-    refreshTabViewBuckets();
-  }, []);
-
   return (
-    <>
-      <h1>browsing</h1>
-      <StackedBarChart eventCountBucketRows={eventCountBuckets} />
-    </>
+    <div className="p-36">
+      <Card className="mx-auto max-w-4xl">
+        <h4 className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
+          Your Browsing Activity
+        </h4>
+        <p className="text-tremor-metric font-semibold text-tremor-content-strong dark:text-dark-tremor-content-strong">
+          XX hrs
+        </p>
+        <ActivityStackedBarChart />
+      </Card>
+    </div>
   );
 }
 
