@@ -10,42 +10,44 @@ use crate::db::{
 use crate::models::{BrowseEventFromChromeExtension, BrowseEventRow, ClusterRow, PageInfoRow};
 use crate::services::clustering::assign_cluster;
 use crate::services::page_processing::{
-    extract_keywords, generate_markdown, generate_pgvector_embedding,
+    extract_keywords, get_embedding_from_text, get_markdown_from_html,
 };
 
+pub async fn log_browse_event(
+    State(db): State<PgPool>,
+    Json(browse_event): Json<BrowseEventFromChromeExtension>,
+) -> Result<Json<Option<BrowseEventRow>>, (StatusCode, String)> {
+    if should_ignore_event(&browse_event) {
+        println!("Ignored event: {:?}", browse_event.page_url);
+        return Ok(Json(None));
+    }
+
+    println!("Logging event: {:?}", browse_event.page_url);
+
+    match insert_browse_event(&db, &browse_event).await {
+        Ok(uploaded_row) => process_browse_event_page(&db, &browse_event)
+            .await
+            .map(|_| Json(Some(uploaded_row)))
+            .map_err(|e| {
+                eprintln!("Failed to upload page info: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }),
+        Err(e) => {
+            eprintln!("Failed to upload event: {:?}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        }
+    }
+}
+
 fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
-    // TODO: technically we don't need this since we don't read this url. but
-    //       we should add more urls to this
-    if browse_event.page_url == "chrome://extensions" {
-        return true;
-    } else if browse_event.page_url.contains("localhost") {
+    if browse_event.page_url.contains("localhost") {
         return true;
     }
 
     false
 }
 
-async fn update_cluster_info(
-    page_markdown: &String,
-    cluster_id: &String,
-    db: &PgPool,
-) -> Result<Option<ClusterRow>, Error> {
-    let cluster_exists = check_cluster_exists(db, cluster_id).await?;
-
-    if !cluster_exists {
-        // TODO: make `num_keywords` into a param/const
-        let num_keywords = 5;
-        let cluster_keywords = extract_keywords(page_markdown, num_keywords);
-        let cluster_name = cluster_keywords.join(" ");
-        let cluster_row: ClusterRow = insert_cluster(db, &cluster_id, &cluster_name).await?;
-
-        return Ok(Some(cluster_row));
-    }
-
-    Ok(None)
-}
-
-async fn update_page_info(
+async fn process_browse_event_page(
     db: &PgPool,
     browse_event: &BrowseEventFromChromeExtension,
 ) -> Result<Option<PageInfoRow>, Error> {
@@ -53,8 +55,8 @@ async fn update_page_info(
 
     if !page_info_exists {
         if let Some(page_content) = &browse_event.page_content {
-            let page_markdown = generate_markdown(page_content)?;
-            let page_embedding = generate_pgvector_embedding(&page_markdown)?;
+            let page_markdown = get_markdown_from_html(page_content)?;
+            let page_embedding = get_embedding_from_text(&page_markdown)?;
             let page_cluster_id = assign_cluster(db, browse_event, &page_embedding).await?;
 
             // Insert the new embedding and cluster id
@@ -77,36 +79,22 @@ async fn update_page_info(
     Ok(None)
 }
 
-pub async fn log_browse_event(
-    State(db): State<PgPool>,
-    Json(browse_event): Json<BrowseEventFromChromeExtension>,
-) -> Result<Json<Option<BrowseEventRow>>, (StatusCode, String)> {
-    if should_ignore_event(&browse_event) {
-        println!("Ignored event: {:?}", browse_event.page_url);
-        return Ok(Json(None));
+async fn update_cluster_info(
+    page_markdown: &String,
+    cluster_id: &String,
+    db: &PgPool,
+) -> Result<Option<ClusterRow>, Error> {
+    let cluster_exists = check_cluster_exists(db, cluster_id).await?;
+
+    if !cluster_exists {
+        // TODO: make `num_keywords` into a param/const
+        let num_keywords = 5;
+        let cluster_keywords = extract_keywords(page_markdown, num_keywords);
+        let cluster_name = cluster_keywords.join(" ");
+        let cluster_row: ClusterRow = insert_cluster(db, &cluster_id, &cluster_name).await?;
+
+        return Ok(Some(cluster_row));
     }
 
-    // TODO: ignore events that are to chrome://extensions, etc.
-    println!("Logging event: {:?}", browse_event.page_url);
-
-    let insert_tab_update_result = insert_browse_event(&db, &browse_event).await;
-
-    match insert_tab_update_result {
-        Ok(uploaded_row) => {
-            // TODO: see if there is a nice way to map errors
-            let update_page_info_result = update_page_info(&db, &browse_event).await;
-
-            match update_page_info_result {
-                Ok(_) => Ok(Json(Some(uploaded_row))),
-                Err(e) => {
-                    println!("Failed to upload page info: {:?}", e.to_string());
-                    Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-                }
-            }
-        }
-        Err(e) => {
-            println!("Failed to upload event: {:?}", e.to_string());
-            Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-        }
-    }
+    Ok(None)
 }

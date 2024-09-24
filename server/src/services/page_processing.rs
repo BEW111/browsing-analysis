@@ -4,7 +4,7 @@ use htmd::HtmlToMarkdown;
 use keyword_extraction::yake::{Yake, YakeParams};
 use pgvector::Vector;
 
-pub fn generate_markdown(page_html: &String) -> Result<String, Error> {
+pub fn get_markdown_from_html(page_html: &String) -> Result<String, Error> {
     let converter = HtmlToMarkdown::builder()
         .skip_tags(vec!["script", "style"])
         .build();
@@ -19,7 +19,7 @@ pub fn extract_keywords(text: &String, num_keywords: usize) -> Vec<String> {
     yake.get_ranked_keywords(num_keywords)
 }
 
-pub fn generate_pgvector_embedding(text: &String) -> Result<Vector, Error> {
+pub fn get_embedding_from_text(text: &String) -> Result<Vector, Error> {
     let embedding_model = TextEmbedding::try_new(
         InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true),
     )?;

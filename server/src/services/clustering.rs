@@ -1,8 +1,9 @@
-use crate::models::{BrowseEventFromChromeExtension, PageInfoRow};
 use anyhow::Error;
 use pgvector::Vector;
 use sqlx::PgPool;
 use std::hash::{DefaultHasher, Hash, Hasher};
+
+use crate::models::{BrowseEventFromChromeExtension, PageInfoRow};
 
 fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
     // TODO: make this cleaner, error check for vecs of same length
