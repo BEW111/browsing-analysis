@@ -14,7 +14,6 @@ pub fn get_markdown_from_html(page_html: &String) -> Result<String, Error> {
 
 pub fn extract_keywords(text: &String, num_keywords: usize) -> Vec<String> {
     let stop_words = stop_words::get(stop_words::LANGUAGE::English);
-
     let yake = Yake::new(YakeParams::WithDefaults(text, &stop_words));
     yake.get_ranked_keywords(num_keywords)
 }

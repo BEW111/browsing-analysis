@@ -61,7 +61,7 @@ async fn process_browse_event_page(
 
             let page_info_row =
                 insert_page_info(db, &browse_event.page_url, &page_embedding).await?;
-            update_cluster_info(&page_markdown, &page_cluster_id, db).await?;
+            update_cluster_info(db, &page_markdown, &page_cluster_id, 1).await?;
             insert_cluster_assignment(db, &browse_event.page_url, &page_cluster_id).await?;
 
             return Ok(Some(page_info_row));
@@ -73,16 +73,16 @@ async fn process_browse_event_page(
 
 // TODO: make this into just one implementation of a clustering algo
 async fn update_cluster_info(
+    db: &PgPool,
     page_markdown: &String,
     cluster_id: &String,
-    db: &PgPool,
+    clustering_run_id: i32,
 ) -> Result<Option<ClusterRow>, Error> {
     let cluster_exists = check_cluster_exists(db, cluster_id).await?;
 
     if !cluster_exists {
         // TODO: make `num_keywords` into a global param/const
         let num_keywords = 5;
-        let clustering_run_id = 1;
         let cluster_keywords = extract_keywords(page_markdown, num_keywords);
         let cluster_name = cluster_keywords.join(" ");
         let cluster_row: ClusterRow =
