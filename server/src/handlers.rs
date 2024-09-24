@@ -12,7 +12,7 @@ use crate::models::{
     BrowseEventFromChromeExtension, BrowseEventRow, BrowseEventRowWithCluster, ClusterRow,
     EventCountBucket, PageInfoRow,
 };
-use crate::services::cluster::assign_cluster;
+use crate::services::clustering::assign_cluster;
 use crate::services::page_processing::{
     extract_keywords, generate_markdown, generate_pgvector_embedding,
 };
