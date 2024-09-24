@@ -1,9 +1,15 @@
 mod cluster;
 mod config;
+mod db;
 mod models;
 mod page_processing;
 
 use cluster::assign_cluster;
+use db::{
+    browse_event::{get_all_browse_events, insert_browse_event},
+    cluster::{check_cluster_exists, insert_cluster},
+    page_info::{check_page_info_exists, insert_page_info},
+};
 use models::{
     BrowseEventFromChromeExtension, BrowseEventRow, BrowseEventRowWithCluster, ClusterRow,
     EventCountBucket, PageInfoRow,
@@ -35,101 +41,57 @@ fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
 async fn update_cluster_info(
     page_markdown: &String,
     cluster_id: &String,
-    pool: &PgPool,
+    db: &PgPool,
 ) -> Result<Option<ClusterRow>, Error> {
-    let check_row_exists_query_result = sqlx::query!(
-        r#"
-        SELECT COUNT(*) as num_clusters FROM cluster
-        WHERE id = $1
-        LIMIT 1
-        "#,
-        cluster_id
-    )
-    .fetch_one(pool)
-    .await?;
+    let cluster_exists = check_cluster_exists(db, cluster_id).await?;
 
-    if let Some(num_clusters) = check_row_exists_query_result.num_clusters {
-        if num_clusters < 1 {
-            println!("Adding cluster info");
+    if !cluster_exists {
+        // TODO: make `num_keywords` into a param/const
+        let num_keywords = 5;
+        let cluster_keywords = extract_keywords(page_markdown, num_keywords);
+        let cluster_name = cluster_keywords.join(" ");
+        let cluster_row: ClusterRow = insert_cluster(db, &cluster_id, &cluster_name).await?;
 
-            let keywords = extract_keywords(page_markdown, 5);
-            println!("{:?}", keywords);
-
-            let cluster_name = keywords.join(" ");
-
-            let cluster_row: ClusterRow = sqlx::query_as(
-                r#"
-                INSERT INTO cluster (id, name)
-                VALUES ($1, $2)
-                RETURNING *
-                "#,
-            )
-            .bind(cluster_id)
-            .bind(cluster_name)
-            .fetch_one(pool)
-            .await?;
-
-            return Ok(Some(cluster_row));
-        }
+        return Ok(Some(cluster_row));
     }
-
-    println!("Cluster info already exists");
 
     Ok(None)
 }
 
-// TODO: move all hard-coded constants in here outside
 async fn update_page_info(
-    pool: &PgPool,
+    db: &PgPool,
     browse_event: &BrowseEventFromChromeExtension,
 ) -> Result<Option<PageInfoRow>, Error> {
-    let check_row_exists_query_result = sqlx::query!(
-        r#"
-        SELECT COUNT(*) as num_pages FROM page_info
-        WHERE page_url = $1
-        LIMIT 1
-        "#,
-        browse_event.page_url
-    )
-    .fetch_one(pool)
-    .await?;
+    let page_info_exists = check_page_info_exists(db, &browse_event.page_url).await?;
 
-    if let Some(num_pages) = check_row_exists_query_result.num_pages {
-        if num_pages < 1 {
-            if let Some(page_content) = &browse_event.page_content {
-                let page_markdown = generate_markdown(page_content)?;
-                let page_embedding = generate_pgvector_embedding(&page_markdown)?;
-                let page_cluster_id = assign_cluster(pool, browse_event, &page_embedding).await?;
+    if !page_info_exists {
+        if let Some(page_content) = &browse_event.page_content {
+            let page_markdown = generate_markdown(page_content)?;
+            let page_embedding = generate_pgvector_embedding(&page_markdown)?;
+            let page_cluster_id = assign_cluster(db, browse_event, &page_embedding).await?;
 
-                // Insert the new embedding and cluster id
-                println!("Inserting embedding into db");
-                let page_info_row: PageInfoRow = sqlx::query_as(
-                    r#"
-                    INSERT INTO page_info (page_url, page_embedding, page_cluster_id)
-                    VALUES ($1, $2, $3)
-                    RETURNING *
-                    "#,
-                )
-                .bind(&browse_event.page_url)
-                .bind(&page_embedding)
-                .bind(&page_cluster_id)
-                .fetch_one(pool)
-                .await?;
-                println!("Finished inserting embedding!");
+            // Insert the new embedding and cluster id
+            println!("Inserting embedding into db...");
+            let page_info_row: PageInfoRow = insert_page_info(
+                db,
+                &browse_event.page_url,
+                &page_embedding,
+                &page_cluster_id,
+            )
+            .await?;
+            println!("Finished inserting embedding!");
 
-                update_cluster_info(&page_markdown, &page_cluster_id, pool).await?;
+            update_cluster_info(&page_markdown, &page_cluster_id, db).await?;
 
-                return Ok(Some(page_info_row));
-            }
-        } else {
-            println!("Page has already been logged")
+            return Ok(Some(page_info_row));
         }
     }
+
     Ok(None)
 }
 
 async fn log_browse_event(
-    State(pool): State<PgPool>,
+    State(db): State<PgPool>,
     Json(browse_event): Json<BrowseEventFromChromeExtension>,
 ) -> Result<Json<Option<BrowseEventRow>>, (StatusCode, String)> {
     if should_ignore_event(&browse_event) {
@@ -140,26 +102,12 @@ async fn log_browse_event(
     // TODO: ignore events that are to chrome://extensions, etc.
     println!("Logging event: {:?}", browse_event.page_url);
 
-    let insert_tab_update_result = sqlx::query_as!(
-        BrowseEventRow,
-        r#"
-        INSERT INTO browse_event (timestamp, tab_id, page_url, page_title, event_type) 
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING *
-        "#,
-        browse_event.timestamp,
-        browse_event.tab_id,
-        browse_event.page_url,
-        browse_event.page_title,
-        browse_event.event_type
-    )
-    .fetch_one(&pool)
-    .await;
+    let insert_tab_update_result = insert_browse_event(&db, &browse_event).await;
 
     match insert_tab_update_result {
         Ok(uploaded_row) => {
             // TODO: see if there is a nice way to map errors
-            let update_page_info_result = update_page_info(&pool, &browse_event).await;
+            let update_page_info_result = update_page_info(&db, &browse_event).await;
 
             match update_page_info_result {
                 Ok(_) => Ok(Json(Some(uploaded_row))),
@@ -177,22 +125,13 @@ async fn log_browse_event(
 }
 
 async fn return_all_events(
-    State(pool): State<PgPool>,
+    State(db): State<PgPool>,
 ) -> Result<Json<Vec<BrowseEventRowWithCluster>>, (StatusCode, String)> {
-    let stream = sqlx::query_as!(
-        BrowseEventRowWithCluster,
-        r#"
-        SELECT id, timestamp, tab_id, browse_event.page_url as page_url, page_title, page_cluster_id, event_type FROM browse_event
-        LEFT JOIN page_info ON browse_event.page_url = page_info.page_url
-        "#
-    )
-    .fetch(&pool);
-    let collected_events = stream
-        .try_collect::<Vec<_>>()
-        .await
+    let all_events = get_all_browse_events(&db).await;
+
+    all_events
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
-    collected_events
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn get_event_buckets(
