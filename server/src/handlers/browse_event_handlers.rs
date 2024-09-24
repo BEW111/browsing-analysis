@@ -59,33 +59,10 @@ async fn process_browse_event_page(
             let page_embedding = get_embedding_from_text(&page_markdown)?;
             let page_cluster_id = assign_cluster(db, browse_event, &page_embedding).await?;
 
-            // Insert the new embedding and cluster id
-            // let page_info_row =
-            //     insert_page_info(db, &browse_event.page_url, &page_embedding).await?;
-
-            // update_cluster_info(&page_markdown, &page_cluster_id, db).await?;
-            // insert_cluster_assignment(db, &browse_event.page_url, &page_cluster_id).await?;
-
             let page_info_row =
-                match insert_page_info(db, &browse_event.page_url, &page_embedding).await {
-                    Ok(row) => row,
-                    Err(e) => {
-                        eprintln!("insert_page_info: {:?}", e);
-                        return Err(e.into());
-                    }
-                };
-
-            if let Err(e) = update_cluster_info(&page_markdown, &page_cluster_id, db).await {
-                eprintln!("update_cluster_info: {:?}", e);
-                return Err(e.into());
-            }
-
-            if let Err(e) =
-                insert_cluster_assignment(db, &browse_event.page_url, &page_cluster_id).await
-            {
-                eprintln!("insert_cluster_assignment: {:?}", e);
-                return Err(e.into());
-            }
+                insert_page_info(db, &browse_event.page_url, &page_embedding).await?;
+            update_cluster_info(&page_markdown, &page_cluster_id, db).await?;
+            insert_cluster_assignment(db, &browse_event.page_url, &page_cluster_id).await?;
 
             return Ok(Some(page_info_row));
         }
@@ -94,6 +71,7 @@ async fn process_browse_event_page(
     Ok(None)
 }
 
+// TODO: make this into just one implementation of a clustering algo
 async fn update_cluster_info(
     page_markdown: &String,
     cluster_id: &String,
@@ -102,7 +80,7 @@ async fn update_cluster_info(
     let cluster_exists = check_cluster_exists(db, cluster_id).await?;
 
     if !cluster_exists {
-        // TODO: make `num_keywords` into a param/const
+        // TODO: make `num_keywords` into a global param/const
         let num_keywords = 5;
         let clustering_run_id = 1;
         let cluster_keywords = extract_keywords(page_markdown, num_keywords);
