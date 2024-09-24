@@ -3,7 +3,7 @@ use pgvector::Vector;
 use sqlx::PgPool;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use crate::models::{BrowseEventFromChromeExtension, PageInfoRow};
+use crate::models::{BrowseEventFromChromeExtension, PageInfoRow, PageInfoRowWithCluster};
 
 fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
     // TODO: make this cleaner, error check for vecs of same length
@@ -22,9 +22,11 @@ pub async fn assign_cluster(
     browse_event: &BrowseEventFromChromeExtension,
     page_embedding: &Vector,
 ) -> Result<String, Error> {
-    let nearest_page_info_row: Option<PageInfoRow> = sqlx::query_as(
+    let nearest_page_info_row: Option<PageInfoRowWithCluster> = sqlx::query_as(
         r#"
-    SELECT * FROM page_info ORDER BY page_embedding <-> $1 LIMIT 1
+    SELECT page_info.page_url as page_url, page_embedding, cluster_id FROM page_info
+    JOIN cluster_assignment ca on page_info.page_url = ca.page_url 
+    ORDER BY page_embedding <-> $1 LIMIT 1
     "#,
     )
     .bind(&page_embedding)

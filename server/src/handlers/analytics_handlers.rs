@@ -23,31 +23,37 @@ pub async fn get_event_buckets(
         r#"
         WITH timerange_events AS (
             SELECT
-                timestamp AT TIME ZONE 'America/New_York' AS local_time, 
-                page_cluster_id
+                be.timestamp AT TIME ZONE 'America/New_York' AS local_time,
+                ca.cluster_id
             FROM
                 browse_event be
                 JOIN page_info pi ON be.page_url = pi.page_url
-            WHERE timestamp AT TIME ZONE 'America/New_York' >= DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') - INTERVAL '1 day'
-                AND timestamp AT TIME ZONE 'America/New_York' < DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') + INTERVAL '1 day'
-            ORDER BY timestamp DESC
+                JOIN cluster_assignment ca ON be.page_url = ca.page_url
+            WHERE 
+                be.timestamp AT TIME ZONE 'America/New_York' >= DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') - INTERVAL '1 day'
+                AND be.timestamp AT TIME ZONE 'America/New_York' < DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') + INTERVAL '1 day'
+            ORDER BY be.timestamp DESC
         )
         SELECT
             DATE_TRUNC('hour', te.local_time) AS timestamp_bucket,
-            te.page_cluster_id AS cluster_id,
+            te.cluster_id,
             c.name::TEXT AS cluster_name,
+            cr.algorithm AS clustering_algorithm,
             COUNT(*) AS event_count
         FROM
             timerange_events te
         LEFT JOIN
-            cluster c ON te.page_cluster_id = c.id
+            cluster c ON te.cluster_id = c.id
+        LEFT JOIN
+            clustering_run cr ON c.clustering_run_id = cr.id
         GROUP BY
             DATE_TRUNC('hour', te.local_time),
-            te.page_cluster_id,
-            c.name
+            te.cluster_id,
+            c.name,
+            cr.algorithm
         ORDER BY
             timestamp_bucket,
-            cluster_id
+            cluster_id;
     "#
     )
     .fetch(&pool);

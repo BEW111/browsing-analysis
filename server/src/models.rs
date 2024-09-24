@@ -36,6 +36,12 @@ pub struct BrowseEventRowWithCluster {
 pub struct PageInfoRow {
     pub page_url: String,
     pub page_embedding: pgvector::Vector,
+}
+
+#[derive(FromRow)]
+pub struct PageInfoRowWithCluster {
+    pub page_url: String,
+    pub page_embedding: pgvector::Vector,
     pub page_cluster_id: String,
 }
 
