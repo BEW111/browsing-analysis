@@ -44,7 +44,7 @@ function ClusterViewCard() {
           ))}
         </SearchSelect>
         {pageUrls && (
-          <List className="mx-auto max-w-md">
+          <List className="mx-auto">
             {pageUrls.map((pageUrl) => (
               <ListItem key={pageUrl}>
                 <a
