@@ -1,18 +1,23 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    debug_handler,
+    extract::{Query, State},
+    http::StatusCode,
+    Json,
+};
 use futures::TryStreamExt;
+use serde::Deserialize;
 use sqlx::PgPool;
 
-use crate::db::browse_event::get_all_browse_events;
-use crate::models::{BrowseEventRowWithCluster, EventCountBucket};
+use crate::db::{browse_event::get_all_browse_events, page_info::get_pages_in_cluster};
+use crate::models::{BrowseEventRowWithCluster, EventCountBucket, PageUrlRow};
 
 pub async fn return_all_events(
     State(db): State<PgPool>,
 ) -> Result<Json<Vec<BrowseEventRowWithCluster>>, (StatusCode, String)> {
-    let all_events = get_all_browse_events(&db).await;
-
-    all_events
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    match get_all_browse_events(&db).await {
+        Ok(events) => Ok(Json(events)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
 }
 
 pub async fn get_event_buckets(
@@ -64,4 +69,19 @@ pub async fn get_event_buckets(
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     collected_events
+}
+
+#[derive(Deserialize)]
+pub struct WithClusterId {
+    cluster_id: String,
+}
+
+pub async fn get_pages(
+    State(db): State<PgPool>,
+    Query(params): Query<WithClusterId>,
+) -> Result<Json<Vec<PageUrlRow>>, (StatusCode, String)> {
+    match get_pages_in_cluster(&db, &params.cluster_id).await {
+        Ok(pages) => Ok(Json(pages)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
 }

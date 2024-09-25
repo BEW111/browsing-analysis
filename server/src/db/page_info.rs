@@ -1,7 +1,8 @@
+use futures::TryStreamExt;
 use pgvector::Vector;
 use sqlx::{Error, PgPool};
 
-use crate::models::{PageInfoRow, PageInfoRowWithCluster};
+use crate::models::{PageInfoRow, PageInfoRowWithCluster, PageUrlRow};
 
 pub async fn check_page_info_exists(db: &PgPool, page_url: &String) -> Result<bool, Error> {
     let check_row_exists_query_result = sqlx::query!(
@@ -50,4 +51,22 @@ pub async fn get_nearest_page_info(
     .bind(&page_embedding)
     .fetch_optional(db)
     .await
+}
+
+pub async fn get_pages_in_cluster(
+    db: &PgPool,
+    cluster_id: &String,
+) -> Result<Vec<PageUrlRow>, Error> {
+    let stream = sqlx::query_as!(
+        PageUrlRow,
+        r#"
+        SELECT page_info.page_url FROM page_info
+        JOIN cluster_assignment ON page_info.page_url = cluster_assignment.page_url
+        WHERE cluster_id = $1
+        "#,
+        cluster_id
+    )
+    .fetch(db);
+
+    stream.try_collect::<Vec<_>>().await
 }

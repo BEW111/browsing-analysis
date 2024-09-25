@@ -38,6 +38,11 @@ pub struct PageInfoRow {
     pub page_embedding: pgvector::Vector,
 }
 
+#[derive(Serialize, FromRow)]
+pub struct PageUrlRow {
+    pub page_url: String,
+}
+
 #[derive(FromRow)]
 pub struct PageInfoRowWithCluster {
     pub page_url: String,
