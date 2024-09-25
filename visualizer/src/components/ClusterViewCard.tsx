@@ -11,7 +11,6 @@ import { getPages } from "../utils/pageData";
 
 function ClusterViewCard() {
   const [clusterData, setClusterData] = useState<null | Cluster[]>();
-  const [currentClusterId, setCurrentClusterId] = useState<null | string>();
   const [pageUrls, setPageUrls] = useState<null | string[]>();
 
   const refreshClusterData = async () => {
@@ -20,8 +19,6 @@ function ClusterViewCard() {
   };
 
   const onSetClusterId = async (clusterId: string) => {
-    setCurrentClusterId(clusterId);
-
     const pageUrls: string[] = await getPages(clusterId);
     setPageUrls(pageUrls);
   };
@@ -34,18 +31,14 @@ function ClusterViewCard() {
     return (
       <Card className="mx-auto max-w-4xl">
         <h4 className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
-          Pages in cluster {currentClusterId}
+          Pages by cluster
         </h4>
         <p className="text-tremor-metric font-semibold text-tremor-content-strong dark:text-dark-tremor-content-strong">
           {pageUrls ? pageUrls.length : 0} pages
         </p>
-        <SearchSelect
-          className="my-4"
-          defaultValue={clusterData[0].id}
-          onValueChange={onSetClusterId}
-        >
+        <SearchSelect className="my-4" onValueChange={onSetClusterId}>
           {clusterData.map((cluster) => (
-            <SearchSelectItem value={cluster.id}>
+            <SearchSelectItem key={cluster.id} value={cluster.id}>
               {cluster.name}
             </SearchSelectItem>
           ))}
