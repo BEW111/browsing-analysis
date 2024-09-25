@@ -1,18 +1,16 @@
-import { Card } from "@tremor/react";
-import ActivityStackedBarChart from "./components/ActivityStackedBarChart";
+import ActivityStackedBarCard from "./components/ActivityStackedBarCard";
+import ClusterViewCard from "./components/ClusterViewCard";
 
 function App() {
   return (
-    <div className="p-36">
-      <Card className="mx-auto max-w-4xl">
-        <h4 className="text-tremor-default text-tremor-content dark:text-dark-tremor-content">
-          Your Browsing Activity
-        </h4>
-        <p className="text-tremor-metric font-semibold text-tremor-content-strong dark:text-dark-tremor-content-strong">
-          XX hrs
-        </p>
-        <ActivityStackedBarChart />
-      </Card>
+    <div>
+      <div className="h-24 flex align-middle items-center px-12">
+        <p className="text-lg">Streams of browsing</p>
+      </div>
+      <div className="bg-red-100 flex gap-8 p-8 flex-wrap">
+        <ActivityStackedBarCard />
+        <ClusterViewCard />
+      </div>
     </div>
   );
 }
