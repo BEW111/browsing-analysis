@@ -6,9 +6,9 @@ use axum::{
 use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::config::Config;
 use crate::handlers::analytics_handlers::{get_event_buckets, get_pages, return_all_events};
 use crate::handlers::browse_event_handlers::log_browse_event;
+use crate::{config::Config, handlers::analytics_handlers::get_clusters};
 
 pub fn create_router(db: PgPool, config: &Config) -> Router {
     let cors = create_cors_layer(config);
@@ -18,6 +18,7 @@ pub fn create_router(db: PgPool, config: &Config) -> Router {
         .route("/return_all_events", get(return_all_events))
         .route("/get_event_buckets", get(get_event_buckets))
         .route("/get_pages", get(get_pages))
+        .route("/get_clusters", get(get_clusters))
         .with_state(db)
         .layer(cors)
 }

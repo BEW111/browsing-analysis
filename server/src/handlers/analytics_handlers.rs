@@ -1,5 +1,4 @@
 use axum::{
-    debug_handler,
     extract::{Query, State},
     http::StatusCode,
     Json,
@@ -8,8 +7,14 @@ use futures::TryStreamExt;
 use serde::Deserialize;
 use sqlx::PgPool;
 
-use crate::db::{browse_event::get_all_browse_events, page_info::get_pages_in_cluster};
 use crate::models::{BrowseEventRowWithCluster, EventCountBucket, PageUrlRow};
+use crate::{
+    db::{
+        browse_event::get_all_browse_events, cluster::get_all_clusters,
+        page_info::get_pages_in_cluster,
+    },
+    models::ClusterRow,
+};
 
 pub async fn return_all_events(
     State(db): State<PgPool>,
@@ -82,6 +87,15 @@ pub async fn get_pages(
 ) -> Result<Json<Vec<PageUrlRow>>, (StatusCode, String)> {
     match get_pages_in_cluster(&db, &params.cluster_id).await {
         Ok(pages) => Ok(Json(pages)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+pub async fn get_clusters(
+    State(db): State<PgPool>,
+) -> Result<Json<Vec<ClusterRow>>, (StatusCode, String)> {
+    match get_all_clusters(&db).await {
+        Ok(clusters) => Ok(Json(clusters)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }

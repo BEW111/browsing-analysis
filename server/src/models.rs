@@ -58,7 +58,7 @@ pub struct EventCountBucket {
     pub event_count: Option<i64>,
 }
 
-#[derive(FromRow)]
+#[derive(Deserialize, Serialize, FromRow)]
 pub struct ClusterRow {
     pub id: String,
     pub name: String,

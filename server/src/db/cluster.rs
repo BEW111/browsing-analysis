@@ -1,3 +1,4 @@
+use futures::TryStreamExt;
 use sqlx::{Error, PgPool};
 
 use crate::models::{ClusterAssignmentRow, ClusterRow};
@@ -53,4 +54,16 @@ pub async fn insert_cluster_assignment(
     .bind(cluster_id)
     .fetch_one(db)
     .await
+}
+
+pub async fn get_all_clusters(db: &PgPool) -> Result<Vec<ClusterRow>, Error> {
+    let stream = sqlx::query_as!(
+        ClusterRow,
+        r#"
+        SELECT * FROM cluster
+        "#
+    )
+    .fetch(db);
+
+    stream.try_collect::<Vec<_>>().await
 }
