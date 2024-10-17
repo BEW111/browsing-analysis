@@ -31,6 +31,22 @@ pub async fn insert_page(db: &PgPool, url: &String, contents: &String) -> Result
     .await
 }
 
+pub async fn update_page(db: &PgPool, url: &str, new_contents: &str) -> Result<PageRow, Error> {
+    sqlx::query_as!(
+        PageRow,
+        r#"
+        UPDATE page
+        SET contents = $1
+        WHERE url = $2
+        RETURNING *
+        "#,
+        new_contents,
+        url
+    )
+    .fetch_one(db)
+    .await
+}
+
 pub async fn get_pages_in_cluster(
     db: &PgPool,
     cluster_id: &String,

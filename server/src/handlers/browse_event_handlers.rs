@@ -4,6 +4,7 @@ use sqlx::PgPool;
 
 // TODO: clean up import structure here
 use crate::{
+    db::page::update_page,
     models::{
         browse_event::{BrowseEventFromChromeExtension, BrowseEventRow},
         cluster::ClusterRow,
@@ -66,16 +67,17 @@ async fn process_browse_event_page(
     // even if the strategies are new. Batch strategies will always run on new pages.
     let url = &browse_event.page_url;
 
-    let page_missing_or_contents_empty = match get_page_from_url(db, url).await? {
-        None => true,
-        Some(page_row) => page_row.contents.is_none(),
+    let (page_row_missing, page_contents_missing) = match get_page_from_url(db, url).await? {
+        Some(page_row) => (false, page_row.contents.is_none()),
+        None => (true, true),
     };
 
-    if page_missing_or_contents_empty {
+    if page_contents_missing {
         if let Some(page_content) = &browse_event.page_content {
-            // TODO: the page may already be in the table, but not have any contents. In this case
-            // we should update the row. Either way, we should get the updated row
-            let page_row = insert_page(db, url, &page_content).await?;
+            let page_row = match page_row_missing {
+                true => insert_page(db, url, &page_content).await?,
+                false => update_page(db, url, &page_content).await?,
+            };
 
             // TODO: get multiple different pipelines and run them all
             let preprocessing_pipeline = pipelines::get_default_pipeline()?;
