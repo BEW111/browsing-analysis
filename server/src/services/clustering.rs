@@ -4,8 +4,8 @@ use sqlx::PgPool;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
-    db::page_info::get_nearest_page_info,
-    models::{BrowseEventFromChromeExtension, PageInfoRowWithCluster},
+    db::cluster::get_nearest_cluster_above_similarity_threshold,
+    models::{browse_event::BrowseEventFromChromeExtension, cluster::ClusterAssignmentRow},
 };
 
 fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
@@ -20,33 +20,23 @@ fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
     return dot_product / (v1_norm * v2_norm);
 }
 
-pub async fn assign_cluster(
+pub async fn assign_page_to_cluster_id(
     db: &PgPool,
     browse_event: &BrowseEventFromChromeExtension,
     page_embedding: &Vector,
 ) -> Result<String, Error> {
     let close_enough_cluster_distance = 0.8;
 
-    let nearest_page_info_row: Option<PageInfoRowWithCluster> =
-        get_nearest_page_info(db, page_embedding).await?;
+    let cluster_assignment_row: Option<ClusterAssignmentRow> =
+        get_nearest_cluster_above_similarity_threshold(
+            db,
+            page_embedding,
+            close_enough_cluster_distance,
+        )
+        .await?;
 
-    let page_cluster_id = match nearest_page_info_row {
-        Some(nearest_page_info_row) => {
-            let nearest_page_similarity = cosine_similarity(
-                nearest_page_info_row.page_embedding.to_vec(),
-                page_embedding.to_vec(),
-            );
-
-            match nearest_page_similarity > close_enough_cluster_distance {
-                true => nearest_page_info_row.cluster_id,
-                false => {
-                    // TODO: need a better way to come up with cluster ids
-                    let mut hasher = DefaultHasher::new();
-                    browse_event.page_url.hash(&mut hasher);
-                    hasher.finish().to_string()
-                }
-            }
-        }
+    let page_cluster_id = match cluster_assignment_row {
+        Some(cluster_assignment_row) => cluster_assignment_row.cluster_id,
         None => {
             // TODO: need a better way to come up with cluster ids
             let mut hasher = DefaultHasher::new();

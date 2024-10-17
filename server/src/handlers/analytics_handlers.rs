@@ -7,13 +7,13 @@ use futures::TryStreamExt;
 use serde::Deserialize;
 use sqlx::PgPool;
 
-use crate::models::{BrowseEventRowWithCluster, EventCountBucket, PageUrlRow};
 use crate::{
-    db::{
-        browse_event::get_all_browse_events, cluster::get_all_clusters,
-        page_info::get_pages_in_cluster,
-    },
-    models::ClusterRow,
+    db::page::get_pages_in_cluster,
+    models::{browse_event::BrowseEventRowWithCluster, EventCountBucket, PageUrlRow},
+};
+use crate::{
+    db::{browse_event::get_all_browse_events, cluster::get_all_clusters},
+    models::cluster::ClusterRow,
 };
 
 pub async fn return_all_events(
@@ -28,8 +28,9 @@ pub async fn return_all_events(
 pub async fn get_event_buckets(
     State(pool): State<PgPool>,
 ) -> Result<Json<Vec<EventCountBucket>>, (StatusCode, String)> {
-    let stream = sqlx::query_as(
+    let stream = sqlx::query_as!(
         // TODO: add timezone, time range, and interval as query params
+        EventCountBucket,
         r#"
         WITH timerange_events AS (
             SELECT
@@ -37,8 +38,8 @@ pub async fn get_event_buckets(
                 ca.cluster_id
             FROM
                 browse_event be
-                JOIN page_info pi ON be.page_url = pi.page_url
-                JOIN cluster_assignment ca ON be.page_url = ca.page_url
+                JOIN page ON be.page_url = page.url
+                JOIN cluster_assignment ca ON page.id = ca.page_id
             WHERE 
                 be.timestamp AT TIME ZONE 'America/New_York' >= DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') - INTERVAL '1 day'
                 AND be.timestamp AT TIME ZONE 'America/New_York' < DATE_TRUNC('day', CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York') + INTERVAL '1 day'

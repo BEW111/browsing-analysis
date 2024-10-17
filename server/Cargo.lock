@@ -2476,6 +2476,7 @@ dependencies = [
  "futures",
  "htmd",
  "keyword_extraction",
+ "log",
  "pgvector",
  "serde",
  "sqlx",

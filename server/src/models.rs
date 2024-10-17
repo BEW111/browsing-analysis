@@ -1,37 +1,19 @@
+pub mod browse_event;
+pub mod cluster;
+
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-#[derive(Deserialize, Serialize, FromRow, Debug)]
-pub struct BrowseEventFromChromeExtension {
-    pub tab_id: i32,
-    pub timestamp: DateTime<Utc>,
-    pub page_url: String,
-    pub page_title: String,
-    pub page_content: Option<String>,
-    pub event_type: String, // TODO: make this into an enum
-}
-#[derive(Deserialize, Serialize, FromRow, Debug)]
-pub struct BrowseEventRow {
+#[derive(FromRow)]
+pub struct PageRow {
     pub id: i32,
-    pub timestamp: DateTime<Utc>,
-    pub tab_id: i32,
-    pub page_url: String,
-    pub page_title: String,
-    pub event_type: String,
+    pub url: String,
+    pub contents: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Deserialize, Serialize, FromRow, Debug)]
-pub struct BrowseEventRowWithCluster {
-    pub id: i32,
-    pub timestamp: DateTime<Utc>,
-    pub tab_id: i32,
-    pub page_url: String,
-    pub page_title: String,
-    pub page_cluster_id: Option<String>,
-    pub event_type: String,
-}
-
+// TO BE DEPRECATED
 #[derive(FromRow)]
 pub struct PageInfoRow {
     pub page_url: String,
@@ -40,7 +22,16 @@ pub struct PageInfoRow {
 
 #[derive(Serialize, FromRow)]
 pub struct PageUrlRow {
-    pub page_url: String,
+    pub url: String,
+}
+
+#[derive(FromRow)]
+pub struct PreprocessedPageEmbeddingRow {
+    pub id: i32,
+    pub page_id: i32,
+    pub embedding_run: String,
+    pub embedding: pgvector::Vector,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 #[derive(FromRow)]
@@ -55,19 +46,6 @@ pub struct EventCountBucket {
     pub timestamp_bucket: Option<NaiveDateTime>,
     pub cluster_id: Option<String>,
     pub cluster_name: Option<String>,
+    pub clustering_algorithm: Option<String>,
     pub event_count: Option<i64>,
-}
-
-#[derive(Deserialize, Serialize, FromRow)]
-pub struct ClusterRow {
-    pub id: String,
-    pub name: String,
-    pub clustering_run_id: i32,
-}
-
-#[derive(FromRow)]
-pub struct ClusterAssignmentRow {
-    pub id: i32,
-    pub page_url: String,
-    pub cluster_id: String,
 }
