@@ -8,12 +8,12 @@ use serde::Deserialize;
 use sqlx::PgPool;
 
 use crate::{
-    db::page::get_pages_in_cluster,
-    models::{browse_event::BrowseEventRowWithCluster, EventCountBucket, PageUrlRow},
-};
-use crate::{
-    db::{browse_event::get_all_browse_events, cluster::get_all_clusters},
-    models::cluster::ClusterRow,
+    db::{
+        browse_event::get_all_browse_events, cluster::get_all_clusters, page::get_pages_in_cluster,
+    },
+    models::{
+        browse_event::BrowseEventRowWithCluster, cluster::ClusterRow, EventCountBucket, PageUrlRow,
+    },
 };
 
 pub async fn return_all_events(

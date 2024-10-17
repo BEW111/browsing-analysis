@@ -2,26 +2,23 @@ use anyhow::Error;
 use axum::{debug_handler, extract::State, http::StatusCode, Json};
 use sqlx::PgPool;
 
-// TODO: clean up import structure here
 use crate::{
-    db::page::update_page,
+    db::{
+        browse_event::insert_browse_event,
+        cluster::{check_cluster_exists, insert_cluster, insert_cluster_assignment},
+        page::{get_page_from_url, insert_page, update_page},
+        preprocessed_page_embedding::insert_preprocessed_page_embedding,
+    },
     models::{
         browse_event::{BrowseEventFromChromeExtension, BrowseEventRow},
         cluster::ClusterRow,
         PageRow,
     },
-    services::clustering::assign_page_to_cluster_id,
-};
-
-use crate::services::preprocessing::pipelines;
-use crate::{
-    db::{
-        browse_event::insert_browse_event,
-        cluster::{check_cluster_exists, insert_cluster, insert_cluster_assignment},
-        page::{get_page_from_url, insert_page},
-        preprocessed_page_embedding::insert_preprocessed_page_embedding,
+    services::{
+        clustering::assign_page_to_cluster_id,
+        preprocessing::pipelines,
+        utils::{extract_keywords, html_to_markdown},
     },
-    services::utils::{extract_keywords, html_to_markdown},
 };
 
 #[debug_handler]
