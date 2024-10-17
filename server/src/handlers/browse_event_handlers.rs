@@ -85,7 +85,7 @@ async fn process_browse_event_page(
             insert_preprocessed_page_embedding(
                 db,
                 page_row.id,
-                pipelines::DIRECT_MINILM_PIPELINE.to_string(),
+                pipelines::DIRECT_MINILM_PIPELINE,
                 &embedding,
             )
             .await?;
@@ -106,8 +106,8 @@ async fn process_browse_event_page(
 // TODO: make this into just one implementation of a clustering algo
 async fn create_cluster_if_not_exists(
     db: &PgPool,
-    page_content: &String,
-    cluster_id: &String,
+    page_content: &str,
+    cluster_id: &str,
     clustering_run_id: i32,
 ) -> Result<Option<ClusterRow>, Error> {
     let cluster_exists = check_cluster_exists(db, cluster_id).await?;

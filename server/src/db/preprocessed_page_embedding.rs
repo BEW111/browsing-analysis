@@ -6,7 +6,7 @@ use crate::models::PreprocessedPageEmbeddingRow;
 pub async fn insert_preprocessed_page_embedding(
     db: &PgPool,
     page_id: i32,
-    embedding_run: String,
+    embedding_run: &str,
     embedding: &Vector,
 ) -> Result<PreprocessedPageEmbeddingRow, Error> {
     sqlx::query_as(

@@ -5,17 +5,17 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use pgvector::Vector;
 
 pub trait PreprocessingStep: Send {
-    fn process(&self, input: &String) -> Result<String, Error>;
+    fn process(&self, input: &str) -> Result<String, Error>;
 }
 
 pub trait EmbeddingStep: Send {
-    fn embed(&self, input: &String) -> Result<Vector, Error>;
+    fn embed(&self, input: &str) -> Result<Vector, Error>;
 }
 
 pub struct HtmlToMarkdownStep;
 
 impl PreprocessingStep for HtmlToMarkdownStep {
-    fn process(&self, page_html: &String) -> Result<String, Error> {
+    fn process(&self, page_html: &str) -> Result<String, Error> {
         html_to_markdown(page_html)
     }
 }
@@ -23,7 +23,7 @@ impl PreprocessingStep for HtmlToMarkdownStep {
 pub struct ExtractKeywordsStringStep;
 
 impl PreprocessingStep for ExtractKeywordsStringStep {
-    fn process(&self, text: &String) -> Result<String, Error> {
+    fn process(&self, text: &str) -> Result<String, Error> {
         let keywords = extract_keywords(text, 15);
         Ok(keywords.join(" "))
     }
@@ -44,7 +44,7 @@ impl MiniLMEmbeddingStep {
 }
 
 impl EmbeddingStep for MiniLMEmbeddingStep {
-    fn embed(&self, text: &String) -> Result<Vector, Error> {
+    fn embed(&self, text: &str) -> Result<Vector, Error> {
         println!("Creating page embedding...");
         let pages_to_embed = vec![text];
         let page_embedding_vec = self

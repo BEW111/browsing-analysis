@@ -3,7 +3,7 @@ use sqlx::{Error, PgPool};
 
 use crate::models::{PageRow, PageUrlRow};
 
-pub async fn get_page_from_url(db: &PgPool, page_url: &String) -> Result<Option<PageRow>, Error> {
+pub async fn get_page_from_url(db: &PgPool, page_url: &str) -> Result<Option<PageRow>, Error> {
     sqlx::query_as!(
         PageRow,
         r#"
@@ -16,7 +16,7 @@ pub async fn get_page_from_url(db: &PgPool, page_url: &String) -> Result<Option<
     .await
 }
 
-pub async fn insert_page(db: &PgPool, url: &String, contents: &String) -> Result<PageRow, Error> {
+pub async fn insert_page(db: &PgPool, url: &str, contents: &str) -> Result<PageRow, Error> {
     sqlx::query_as!(
         PageRow,
         r#"
@@ -47,10 +47,7 @@ pub async fn update_page(db: &PgPool, url: &str, new_contents: &str) -> Result<P
     .await
 }
 
-pub async fn get_pages_in_cluster(
-    db: &PgPool,
-    cluster_id: &String,
-) -> Result<Vec<PageUrlRow>, Error> {
+pub async fn get_pages_in_cluster(db: &PgPool, cluster_id: &str) -> Result<Vec<PageUrlRow>, Error> {
     let stream = sqlx::query_as!(
         PageUrlRow,
         r#"

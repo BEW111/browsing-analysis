@@ -4,7 +4,7 @@ use sqlx::{Error, PgPool};
 
 use crate::models::cluster::{ClusterAssignmentRow, ClusterRow};
 
-pub async fn check_cluster_exists(db: &PgPool, cluster_id: &String) -> Result<bool, Error> {
+pub async fn check_cluster_exists(db: &PgPool, cluster_id: &str) -> Result<bool, Error> {
     let check_row_exists_query_result = sqlx::query!(
         r#"
         SELECT COUNT(*) as num_clusters FROM cluster
@@ -21,8 +21,8 @@ pub async fn check_cluster_exists(db: &PgPool, cluster_id: &String) -> Result<bo
 
 pub async fn insert_cluster(
     db: &PgPool,
-    cluster_id: &String,
-    cluster_name: &String,
+    cluster_id: &str,
+    cluster_name: &str,
     clustering_run_id: i32,
 ) -> Result<ClusterRow, Error> {
     sqlx::query_as(
