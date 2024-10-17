@@ -7,7 +7,7 @@ function App() {
       <div className="h-24 flex align-middle items-center px-12">
         <p className="text-lg">Streams of browsing</p>
       </div>
-      <div className="bg-red-100 flex gap-8 p-8 flex-wrap">
+      <div className="flex gap-8 p-8 flex-wrap">
         <ActivityStackedBarCard />
         <ClusterViewCard />
       </div>
