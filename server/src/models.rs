@@ -13,13 +13,6 @@ pub struct PageRow {
     pub created_at: Option<DateTime<Utc>>,
 }
 
-// TO BE DEPRECATED
-#[derive(FromRow)]
-pub struct PageInfoRow {
-    pub page_url: String,
-    pub page_embedding: pgvector::Vector,
-}
-
 #[derive(Serialize, FromRow)]
 pub struct PageUrlRow {
     pub url: String,
