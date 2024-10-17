@@ -52,7 +52,11 @@ pub async fn log_browse_event(
 }
 
 fn should_ignore_event(browse_event: &BrowseEventFromChromeExtension) -> bool {
-    if browse_event.page_url.contains("localhost") {
+    if browse_event.page_url.starts_with("http://localhost") {
+        return true;
+    }
+
+    if browse_event.page_url.starts_with("https://mail.google.com") {
         return true;
     }
 
