@@ -1,5 +1,5 @@
 type PageUrlRow = {
-  page_url: string;
+  url: string;
 };
 
 const getPages = async (clusterId: string) => {
@@ -7,7 +7,7 @@ const getPages = async (clusterId: string) => {
     `http://localhost:8000/get_pages?cluster_id=${clusterId}`
   );
   const data: PageUrlRow[] = await response.json();
-  const pageUrls: string[] = data.map((row) => row.page_url);
+  const pageUrls: string[] = data.map((row) => row.url);
 
   return pageUrls;
 };
