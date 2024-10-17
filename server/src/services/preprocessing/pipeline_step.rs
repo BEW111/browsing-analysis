@@ -1,8 +1,8 @@
-use crate::services::utils::{extract_keywords, html_to_markdown};
-
 use anyhow::{Context, Error};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use pgvector::Vector;
+
+use crate::services::utils::{extract_keywords, html_to_markdown};
 
 pub trait PreprocessingStep: Send {
     fn process(&self, input: &str) -> Result<String, Error>;

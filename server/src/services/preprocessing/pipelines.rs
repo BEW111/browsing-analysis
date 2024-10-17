@@ -1,9 +1,9 @@
+use anyhow::Error;
+
 use crate::services::preprocessing::pipeline::PreprocessingPipeline;
 use crate::services::preprocessing::pipeline_step::{
     ExtractKeywordsStringStep, HtmlToMarkdownStep, MiniLMEmbeddingStep,
 };
-
-use anyhow::Error;
 
 pub const DIRECT_MINILM_PIPELINE: &str = "direct-minilm";
 

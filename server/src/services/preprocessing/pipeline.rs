@@ -1,6 +1,6 @@
-use crate::services::preprocessing::pipeline_step::{EmbeddingStep, PreprocessingStep};
-
 use anyhow::Error;
+
+use crate::services::preprocessing::pipeline_step::{EmbeddingStep, PreprocessingStep};
 
 pub struct PreprocessingPipeline {
     pub name: &'static str,
