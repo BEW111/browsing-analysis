@@ -39,6 +39,6 @@ pub struct EventCountBucket {
     pub timestamp_bucket: Option<NaiveDateTime>,
     pub cluster_id: Option<String>,
     pub cluster_name: Option<String>,
-    pub clustering_algorithm: Option<String>,
+    // pub clustering_algorithm: Option<String>,
     pub event_count: Option<i64>,
 }

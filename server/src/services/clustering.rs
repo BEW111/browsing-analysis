@@ -24,13 +24,15 @@ pub async fn assign_page_to_cluster_id(
     db: &PgPool,
     browse_event: &BrowseEventFromChromeExtension,
     page_embedding: &Vector,
+    embedding_run: &str,
 ) -> Result<String, Error> {
-    let close_enough_cluster_distance = 0.8;
+    let close_enough_cluster_distance = 0.95;
 
     let cluster_assignment_row: Option<ClusterAssignmentRow> =
         get_nearest_cluster_above_similarity_threshold(
             db,
             page_embedding,
+            embedding_run,
             close_enough_cluster_distance,
         )
         .await?;

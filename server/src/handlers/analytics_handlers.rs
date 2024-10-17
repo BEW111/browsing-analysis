@@ -1,4 +1,5 @@
 use axum::{
+    debug_handler,
     extract::{Query, State},
     http::StatusCode,
     Json,
@@ -7,12 +8,15 @@ use futures::TryStreamExt;
 use serde::Deserialize;
 use sqlx::PgPool;
 
+use crate::db;
 use crate::{
     db::{
         browse_event::get_all_browse_events, cluster::get_all_clusters, page::get_pages_in_cluster,
     },
     models::{
-        browse_event::BrowseEventRowWithCluster, cluster::ClusterRow, EventCountBucket, PageUrlRow,
+        browse_event::BrowseEventRowWithCluster,
+        cluster::{ClusterRow, ClusteringRunRow},
+        EventCountBucket, PageUrlRow,
     },
 };
 
@@ -25,8 +29,14 @@ pub async fn return_all_events(
     }
 }
 
+#[derive(Deserialize)]
+pub struct WithClusteringRun {
+    clustering_run: String,
+}
+
 pub async fn get_event_buckets(
     State(pool): State<PgPool>,
+    Query(params): Query<WithClusteringRun>,
 ) -> Result<Json<Vec<EventCountBucket>>, (StatusCode, String)> {
     let stream = sqlx::query_as!(
         // TODO: add timezone, time range, and interval as query params
@@ -49,23 +59,21 @@ pub async fn get_event_buckets(
             DATE_TRUNC('hour', te.local_time) AS timestamp_bucket,
             te.cluster_id,
             c.name::TEXT AS cluster_name,
-            cr.algorithm AS clustering_algorithm,
             COUNT(*) AS event_count
         FROM
             timerange_events te
         LEFT JOIN
             cluster c ON te.cluster_id = c.id
-        LEFT JOIN
-            clustering_run cr ON c.clustering_run_id = cr.id
+        WHERE c.clustering_run = $1
         GROUP BY
             DATE_TRUNC('hour', te.local_time),
             te.cluster_id,
-            c.name,
-            cr.algorithm
+            c.name
         ORDER BY
             timestamp_bucket,
             cluster_id;
-    "#
+        "#,
+        &params.clustering_run
     )
     .fetch(&pool);
 
@@ -96,6 +104,15 @@ pub async fn get_clusters(
 ) -> Result<Json<Vec<ClusterRow>>, (StatusCode, String)> {
     match get_all_clusters(&db).await {
         Ok(clusters) => Ok(Json(clusters)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+pub async fn get_clustering_runs(
+    State(db): State<PgPool>,
+) -> Result<Json<Vec<ClusteringRunRow>>, (StatusCode, String)> {
+    match db::cluster::get_clustering_runs(&db).await {
+        Ok(clustering_runs) => Ok(Json(clustering_runs)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }

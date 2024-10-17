@@ -2,7 +2,7 @@ use futures::TryStreamExt;
 use pgvector::Vector;
 use sqlx::{Error, PgPool};
 
-use crate::models::cluster::{ClusterAssignmentRow, ClusterRow};
+use crate::models::cluster::{ClusterAssignmentRow, ClusterRow, ClusteringRunRow};
 
 pub async fn check_cluster_exists(db: &PgPool, cluster_id: &str) -> Result<bool, Error> {
     let check_row_exists_query_result = sqlx::query!(
@@ -21,20 +21,21 @@ pub async fn check_cluster_exists(db: &PgPool, cluster_id: &str) -> Result<bool,
 
 pub async fn insert_cluster(
     db: &PgPool,
-    cluster_id: &str,
-    cluster_name: &str,
-    clustering_run_id: i32,
+    id: &str,
+    name: &str,
+    clustering_run: &str,
 ) -> Result<ClusterRow, Error> {
-    sqlx::query_as(
+    sqlx::query_as!(
+        ClusterRow,
         r#"
-            INSERT INTO cluster (id, name, clustering_run_id)
-            VALUES ($1, $2, $3)
-            RETURNING *
-            "#,
+        INSERT INTO cluster (id, name, clustering_run)
+        VALUES ($1, $2, $3)
+        RETURNING *
+        "#,
+        id,
+        name,
+        clustering_run
     )
-    .bind(cluster_id)
-    .bind(cluster_name)
-    .bind(clustering_run_id)
     .fetch_one(db)
     .await
 }
@@ -73,6 +74,7 @@ pub async fn get_all_clusters(db: &PgPool) -> Result<Vec<ClusterRow>, Error> {
 pub async fn get_nearest_cluster_above_similarity_threshold(
     db: &PgPool,
     page_embedding: &Vector,
+    embedding_run: &str,
     cosine_similarity_threshold: f32,
 ) -> Result<Option<ClusterAssignmentRow>, Error> {
     sqlx::query_as(
@@ -80,11 +82,23 @@ pub async fn get_nearest_cluster_above_similarity_threshold(
         SELECT * FROM cluster_assignment ca
         JOIN preprocessed_page_embedding ppe on ppe.page_id = ca.page_id 
         WHERE ppe.embedding <=> $1 > $2
+        AND ppe.embedding_run = $3
         ORDER BY ppe.embedding <=> $1 LIMIT 1
         "#,
     )
     .bind(page_embedding)
     .bind(cosine_similarity_threshold)
+    .bind(embedding_run)
     .fetch_optional(db)
     .await
+}
+
+pub async fn get_clustering_runs(db: &PgPool) -> Result<Vec<ClusteringRunRow>, Error> {
+    let stream = sqlx::query_as!(
+        ClusteringRunRow,
+        r#"SELECT DISTINCT(clustering_run) FROM cluster"#
+    )
+    .fetch(db);
+
+    stream.try_collect::<Vec<_>>().await
 }

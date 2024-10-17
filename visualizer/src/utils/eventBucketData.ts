@@ -21,8 +21,23 @@ type EventCountBucketInfo = {
   clusterKeys: ClusterKey[];
 };
 
-const getEventCountBucketRows = async () => {
-  const response = await fetch("http://localhost:8000/get_event_buckets");
+type ClusteringRunRow = {
+  clustering_run: string;
+};
+
+const getClusteringRuns = async () => {
+  const response = await fetch("http://localhost:8000/get_clustering_runs");
+  const clusteringRunsJson = await response.json();
+  const clustering_runs: string[] = clusteringRunsJson.map(
+    (row: ClusteringRunRow) => row.clustering_run
+  );
+  return clustering_runs;
+};
+
+const getEventCountBucketRows = async (clustering_run: string) => {
+  const response = await fetch(
+    `http://localhost:8000/get_event_buckets?clustering_run=${clustering_run}`
+  );
   const eventCountBucketsJson = await response.json();
   const eventCountBuckets: EventCountBucketRow[] = eventCountBucketsJson.map(
     (row: EventCountBucketRow) => ({
@@ -127,8 +142,8 @@ const addMissingHours = (
   return allHours;
 };
 
-const getEventBucketData = async () => {
-  const eventCountBucketRows = await getEventCountBucketRows();
+const getEventBucketData = async (clustering_run: string) => {
+  const eventCountBucketRows = await getEventCountBucketRows(clustering_run);
   const partitionedBuckets = partitionEventCountBuckets(eventCountBucketRows);
   const { eventCountBuckets, clusterKeys } =
     formatEventBucketData(partitionedBuckets);
@@ -141,4 +156,4 @@ const getEventBucketData = async () => {
   };
 };
 
-export { getEventBucketData, type EventCountBucketInfo };
+export { getClusteringRuns, getEventBucketData, type EventCountBucketInfo };

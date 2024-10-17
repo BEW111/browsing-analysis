@@ -6,7 +6,7 @@ use crate::{
     db::{
         browse_event::insert_browse_event,
         cluster::{check_cluster_exists, insert_cluster, insert_cluster_assignment},
-        page::{get_page_from_url, insert_page, update_page},
+        page::{self, get_page_from_url, insert_page, update_page},
         preprocessed_page_embedding::insert_preprocessed_page_embedding,
     },
     models::{
@@ -15,7 +15,7 @@ use crate::{
         PageRow,
     },
     services::{
-        clustering::assign_page_to_cluster_id,
+        clustering::{self, assign_page_to_cluster_id},
         preprocessing::pipelines,
         utils::{extract_keywords, html_to_markdown},
     },
@@ -92,11 +92,32 @@ async fn process_browse_event_page(
                 )
                 .await?;
 
-                let page_cluster_id =
-                    assign_page_to_cluster_id(db, browse_event, &embedding).await?;
+                let clustering_run =
+                    format!("{}-online-nearest-neighbor", preprocessing_pipeline.name);
 
-                // TODO: could have slightly better naming here to indicate that "create" refers to adding to the db?
-                create_cluster_if_not_exists(db, page_content, &page_cluster_id, 1).await?;
+                let page_cluster_id = assign_page_to_cluster_id(
+                    db,
+                    browse_event,
+                    &embedding,
+                    preprocessing_pipeline.name,
+                )
+                .await?;
+
+                println!("{:?}", page_cluster_id);
+
+                if !check_cluster_exists(db, &page_cluster_id).await? {
+                    println!("creating a new cluster!");
+                    create_cluster_and_add_to_database(
+                        db,
+                        page_content,
+                        &page_cluster_id,
+                        &clustering_run,
+                    )
+                    .await?;
+                } else {
+                    println!("cluster already exists");
+                }
+
                 insert_cluster_assignment(db, page_row.id, &page_cluster_id).await?;
             }
 
@@ -108,26 +129,20 @@ async fn process_browse_event_page(
 }
 
 // TODO: make this into just one implementation of a clustering algo
-async fn create_cluster_if_not_exists(
+async fn create_cluster_and_add_to_database(
     db: &PgPool,
     page_content: &str,
     cluster_id: &str,
-    clustering_run_id: i32,
-) -> Result<Option<ClusterRow>, Error> {
-    let cluster_exists = check_cluster_exists(db, cluster_id).await?;
+    clustering_run: &str,
+) -> Result<ClusterRow, Error> {
+    // TODO: make `num_keywords` into a global param/const
+    // Also rework this whole thing later
+    let num_keywords = 5;
+    let page_markdown = html_to_markdown(page_content)?;
+    let cluster_keywords = extract_keywords(&page_markdown, num_keywords);
+    let cluster_name = cluster_keywords.join(" ");
+    let cluster_row: ClusterRow =
+        insert_cluster(db, cluster_id, &cluster_name, clustering_run).await?;
 
-    if !cluster_exists {
-        // TODO: make `num_keywords` into a global param/const
-        // Also rework this whole thing later
-        let num_keywords = 5;
-        let page_markdown = html_to_markdown(page_content)?;
-        let cluster_keywords = extract_keywords(&page_markdown, num_keywords);
-        let cluster_name = cluster_keywords.join(" ");
-        let cluster_row: ClusterRow =
-            insert_cluster(db, cluster_id, &cluster_name, clustering_run_id).await?;
-
-        return Ok(Some(cluster_row));
-    }
-
-    Ok(None)
+    Ok(cluster_row)
 }

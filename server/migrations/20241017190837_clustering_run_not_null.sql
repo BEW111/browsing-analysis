@@ -1,0 +1,2 @@
+ALTER TABLE cluster
+ALTER COLUMN clustering_run SET NOT NULL;

@@ -1,21 +1,29 @@
 import { useEffect, useState } from "react";
-import { BarChart, Card } from "@tremor/react";
+import { BarChart, Card, SearchSelect, SearchSelectItem } from "@tremor/react";
 import {
   getEventBucketData,
   EventCountBucketInfo,
+  getClusteringRuns,
 } from "../utils/eventBucketData";
 
 function ActivityStackedBarCard() {
+  const [clusteringRunData, setClusteringRunData] = useState<string[]>([]);
   const [eventBucketData, setEventBucketData] =
     useState<null | EventCountBucketInfo>(null);
 
-  const refreshEventBucketData = async () => {
-    const data: EventCountBucketInfo = await getEventBucketData();
+  const refreshClusteringRunData = async () => {
+    const data: string[] = await getClusteringRuns();
+    setClusteringRunData(data);
+  };
+
+  const onSetClusteringRun = async (clusteringRun: string) => {
+    const data: EventCountBucketInfo = await getEventBucketData(clusteringRun);
     setEventBucketData(data);
   };
 
   useEffect(() => {
-    refreshEventBucketData();
+    refreshClusteringRunData();
+    onSetClusteringRun("legacy");
   }, []);
 
   if (eventBucketData) {
@@ -40,6 +48,13 @@ function ActivityStackedBarCard() {
             yAxisLabel="Events"
           />
         </div>
+        <SearchSelect className="my-4" onValueChange={onSetClusteringRun}>
+          {clusteringRunData.map((clusteringRun) => (
+            <SearchSelectItem key={clusteringRun} value={clusteringRun}>
+              {clusteringRun}
+            </SearchSelectItem>
+          ))}
+        </SearchSelect>
       </Card>
     );
   }
