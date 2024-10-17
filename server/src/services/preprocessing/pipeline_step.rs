@@ -45,14 +45,12 @@ impl MiniLMEmbeddingStep {
 
 impl EmbeddingStep for MiniLMEmbeddingStep {
     fn embed(&self, text: &str) -> Result<Vector, Error> {
-        println!("Creating page embedding...");
         let pages_to_embed = vec![text];
         let page_embedding_vec = self
             .embedding_model
             .embed(pages_to_embed, None)?
             .pop()
             .context("List of embeddings is empty")?;
-        println!("Created embedding.");
 
         Ok(pgvector::Vector::from(page_embedding_vec))
     }

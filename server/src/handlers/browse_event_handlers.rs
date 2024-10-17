@@ -81,21 +81,24 @@ async fn process_browse_event_page(
             };
 
             // TODO: get multiple different pipelines and run them all
-            let preprocessing_pipeline = pipelines::get_default_pipeline()?;
-            let embedding = preprocessing_pipeline.run(page_content)?;
-            insert_preprocessed_page_embedding(
-                db,
-                page_row.id,
-                pipelines::DIRECT_MINILM_PIPELINE,
-                &embedding,
-            )
-            .await?;
+            let preprocessing_pipelines = pipelines::get_all_preprocessing_pipelines()?;
+            for preprocessing_pipeline in preprocessing_pipelines {
+                let embedding = preprocessing_pipeline.run(page_content)?;
+                insert_preprocessed_page_embedding(
+                    db,
+                    page_row.id,
+                    preprocessing_pipeline.name,
+                    &embedding,
+                )
+                .await?;
 
-            let page_cluster_id = assign_page_to_cluster_id(db, browse_event, &embedding).await?;
+                let page_cluster_id =
+                    assign_page_to_cluster_id(db, browse_event, &embedding).await?;
 
-            // TODO: could have slightly better naming here to indicate that "create" refers to adding to the db?
-            create_cluster_if_not_exists(db, page_content, &page_cluster_id, 1).await?;
-            insert_cluster_assignment(db, page_row.id, &page_cluster_id).await?;
+                // TODO: could have slightly better naming here to indicate that "create" refers to adding to the db?
+                create_cluster_if_not_exists(db, page_content, &page_cluster_id, 1).await?;
+                insert_cluster_assignment(db, page_row.id, &page_cluster_id).await?;
+            }
 
             return Ok(Some(page_row));
         }
