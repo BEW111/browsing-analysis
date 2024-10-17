@@ -17,7 +17,7 @@ fn cosine_similarity(v1: Vec<f32>, v2: Vec<f32>) -> f32 {
         .fold(0.0, |acc, (x1, x2)| acc + (x1 * x2));
     let v1_norm = v1.iter().fold(0.0, |acc, x| acc + (x * x)).sqrt();
     let v2_norm = v2.iter().fold(0.0, |acc, x| acc + (x * x)).sqrt();
-    return dot_product / (v1_norm * v2_norm);
+    dot_product / (v1_norm * v2_norm)
 }
 
 pub async fn assign_page_to_cluster_id(

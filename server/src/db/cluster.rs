@@ -83,8 +83,8 @@ pub async fn get_nearest_cluster_above_similarity_threshold(
         ORDER BY ppe.embedding <=> $1 LIMIT 1
         "#,
     )
-    .bind(&page_embedding)
-    .bind(&cosine_similarity_threshold)
+    .bind(page_embedding)
+    .bind(cosine_similarity_threshold)
     .fetch_optional(db)
     .await
 }

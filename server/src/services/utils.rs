@@ -7,7 +7,7 @@ pub fn html_to_markdown(html: &str) -> Result<String, Error> {
         .skip_tags(vec!["script", "style"])
         .build();
 
-    Ok(converter.convert(&html)?)
+    Ok(converter.convert(html)?)
 }
 
 pub fn extract_keywords(text: &str, num_keywords: usize) -> Vec<String> {

@@ -29,6 +29,6 @@ impl PreprocessingPipeline {
             intermediate_result = step.process(&intermediate_result)?;
         }
 
-        return self.embedding_step.embed(&intermediate_result);
+        self.embedding_step.embed(&intermediate_result)
     }
 }

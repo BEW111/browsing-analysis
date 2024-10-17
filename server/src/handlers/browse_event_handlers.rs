@@ -76,13 +76,13 @@ async fn process_browse_event_page(
     if page_contents_missing {
         if let Some(page_content) = &browse_event.page_content {
             let page_row = match page_row_missing {
-                true => insert_page(db, url, &page_content).await?,
-                false => update_page(db, url, &page_content).await?,
+                true => insert_page(db, url, page_content).await?,
+                false => update_page(db, url, page_content).await?,
             };
 
             // TODO: get multiple different pipelines and run them all
             let preprocessing_pipeline = pipelines::get_default_pipeline()?;
-            let embedding = preprocessing_pipeline.run(&page_content)?;
+            let embedding = preprocessing_pipeline.run(page_content)?;
             insert_preprocessed_page_embedding(
                 db,
                 page_row.id,
@@ -94,7 +94,7 @@ async fn process_browse_event_page(
             let page_cluster_id = assign_page_to_cluster_id(db, browse_event, &embedding).await?;
 
             // TODO: could have slightly better naming here to indicate that "create" refers to adding to the db?
-            create_cluster_if_not_exists(db, &page_content, &page_cluster_id, 1).await?;
+            create_cluster_if_not_exists(db, page_content, &page_cluster_id, 1).await?;
             insert_cluster_assignment(db, page_row.id, &page_cluster_id).await?;
 
             return Ok(Some(page_row));
@@ -121,7 +121,7 @@ async fn create_cluster_if_not_exists(
         let cluster_keywords = extract_keywords(&page_markdown, num_keywords);
         let cluster_name = cluster_keywords.join(" ");
         let cluster_row: ClusterRow =
-            insert_cluster(db, &cluster_id, &cluster_name, clustering_run_id).await?;
+            insert_cluster(db, cluster_id, &cluster_name, clustering_run_id).await?;
 
         return Ok(Some(cluster_row));
     }

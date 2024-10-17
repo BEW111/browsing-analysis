@@ -69,12 +69,11 @@ pub async fn get_event_buckets(
     )
     .fetch(&pool);
 
-    let collected_events = stream
+    stream
         .try_collect::<Vec<_>>()
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
-    collected_events
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 #[derive(Deserialize)]
